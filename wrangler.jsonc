@@ -1,0 +1,21 @@
+{
+  "name": "bup-ice-portal",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-28",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bup-ice-db",
+      "database_id": "c7490754-00b5-4c63-8078-431f2518a32d"
+    }
+  ],
+  "vars": {
+    "VAPID_PUBLIC_KEY": "BMlKtmwNPZRgKJJMZw-toDZO5SF6TcQnUjvEBnviZUvL3P2lo60HMSe1buSl1PUUfNB8Pzii1sYWr11nzjZZoOE",
+    "VAPID_SUBJECT": "mailto:mycrbup@gmail.com"
+  }
+}
