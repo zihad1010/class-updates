@@ -181,7 +181,7 @@ function noticeCard(n) {
   copy.append(icon("i-copy")); copy.addEventListener("click", () => copyText(`${n.title}\n\n${n.body}`));
   actions.append(buildReacts(n), copy);
   const footer = el("div", "notice-footer"); footer.append(el("span", "", formatCreated(n.created_at)), el("span", "notice-date", n.relevant_date ? prettyDate(n.relevant_date) : ""));
-  article.append(meta, el("h3", "", n.title), body, more, actions, footer);
+  article.append(meta, el("h3", "", n.title), body, more, el("div", "notice-spacer"), footer, actions);
   return article;
 }
 function pinTile(n) {
