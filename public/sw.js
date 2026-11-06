@@ -1,4 +1,4 @@
-const CACHE = "bup-ice-v7";
+const CACHE = "bup-ice-v8";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/countdown-bg.jpg", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/logo-white.png"];
 
 self.addEventListener("install", (event) => {
@@ -70,4 +70,3 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
-
