@@ -58,7 +58,7 @@ function buildCtSlider(n) {
     const ref = { title, meta, status, nums, card, toggle, ct: null };
     toggle.addEventListener("click", () => openSyllabus(ref.ct));
     foot.append(status, toggle);
-    card.append(countdown, mid, foot); slide.append(card); track.append(slide);
+    card.append(mid, countdown, foot); slide.append(card); track.append(slide);
     ctRefs.push(ref);
     const dot = el("button", "ct-dot"); dot.type = "button"; dot.setAttribute("aria-label", `Show countdown ${i + 1}`);
     dot.addEventListener("click", () => { goToCt(i, true); startCtAuto(); });
@@ -654,7 +654,7 @@ function dayChips(box, current, onPick, showDots) {
   box.innerHTML = ""; const today = dhakaDow();
   DAY_SHORT.forEach((s, i) => {
     const b = el("button", "day-chip" + (i === current ? " active" : "") + (i === today ? " is-today" : "")); b.type = "button";
-    b.setAttribute("aria-label", DAY_NAMES[i]); b.setAttribute("aria-pressed", i === current ? "true" : "false");
+    b.dataset.day = i; b.setAttribute("aria-label", DAY_NAMES[i]); b.setAttribute("aria-pressed", i === current ? "true" : "false");
     b.append(el("small", "", s), el("strong", "", String(weekDayNum(i))));
     if (showDots && dayClasses(i).length) b.append(el("i", "day-dot"));
     b.addEventListener("click", () => onPick(i)); box.append(b);
