@@ -622,3 +622,44 @@ body.on-home{background:#d6ded2 linear-gradient(180deg,#f3efb0 0,#e4e8c0 130px,#
 /* selected reaction: filled, but with a neutral (non-coloured) fill */
 .notice-card .react-btn.on{--face-fill:var(--ink);--feat:var(--card);color:var(--ink);font-weight:700}
 .notice-card.is-pinned .react-btn.on{--face-fill:#fff;--feat:#111;color:#fff}
+
+/* ===== v9: title+date top-left, time boxes in the middle (each a different see-through colour), pinned title white ===== */
+.ct-card{justify-content:flex-start}
+.ct-mid{flex:0 0 auto;align-items:flex-start;text-align:left;justify-content:flex-start;gap:6px}
+.ct-title,.ct-date{align-self:flex-start}
+.ct-title{max-width:100%}
+.countdown{margin:auto 0}
+.countdown>div{border:1px solid rgba(255,255,255,.42);-webkit-backdrop-filter:blur(5px) saturate(135%);backdrop-filter:blur(5px) saturate(135%);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 10px 20px -14px rgba(0,0,0,.6)}
+.countdown>.cd-days{background:linear-gradient(165deg,rgba(74,222,128,.42),rgba(74,222,128,.12))}
+.countdown>.cd-hours{background:linear-gradient(165deg,rgba(96,165,250,.44),rgba(96,165,250,.12))}
+.countdown>.cd-minutes{background:linear-gradient(165deg,rgba(251,191,36,.44),rgba(251,191,36,.12))}
+.countdown>.cd-seconds{background:linear-gradient(165deg,rgba(244,114,182,.44),rgba(244,114,182,.12))}
+.countdown>div:after{display:none}
+.countdown strong{text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.foot-spacer{display:none}
+
+.notice-card.is-pinned h3,:root[data-theme=dark] .notice-card.is-pinned h3,:root:not([data-theme=dark]) .notice-card.is-pinned h3{color:#fff!important}
+
+/* ===== v10: routine day chips, see-through colour per day (Friday and Saturday red) ===== */
+.day-chip{--dr:74,196,128;background:linear-gradient(165deg,rgba(var(--dr),.32),rgba(var(--dr),.1));border:1px solid rgba(var(--dr),.5);-webkit-backdrop-filter:blur(6px) saturate(130%);backdrop-filter:blur(6px) saturate(130%);box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+.day-chip[data-day="0"]{--dr:74,196,128}
+.day-chip[data-day="1"]{--dr:96,165,250}
+.day-chip[data-day="2"]{--dr:251,191,36}
+.day-chip[data-day="3"]{--dr:168,130,250}
+.day-chip[data-day="4"]{--dr:20,184,196}
+.day-chip[data-day="5"],.day-chip[data-day="6"]{--dr:239,68,68;background:linear-gradient(165deg,rgba(var(--dr),.5),rgba(var(--dr),.2))}
+.day-chip small{color:var(--ink2)}
+.day-chip strong{color:var(--ink)}
+.day-chip .day-dot{background:rgb(var(--dr))}
+.day-chip.is-today{border-color:rgba(var(--dr),.95)}
+.day-chip.active{background:linear-gradient(165deg,rgba(var(--dr),.85),rgba(var(--dr),.5));border-color:rgb(var(--dr));box-shadow:0 0 0 1.5px rgba(var(--dr),.9),0 10px 18px -10px rgba(var(--dr),.95)}
+.day-chip.active small,.day-chip.active strong{color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.35)}
+.day-chip.active .day-dot{background:#fff}
+
+/* Sunday: pink instead of green */
+.day-chip,.day-chip[data-day="0"]{--dr:244,114,182}
+.day-chip[data-day="1"]{--dr:96,165,250}
+.day-chip[data-day="2"]{--dr:251,191,36}
+.day-chip[data-day="3"]{--dr:168,130,250}
+.day-chip[data-day="4"]{--dr:20,184,196}
+.day-chip[data-day="5"],.day-chip[data-day="6"]{--dr:239,68,68}
