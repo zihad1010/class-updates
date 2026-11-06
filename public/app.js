@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-let appState = { notices: [], settings: {}, countdowns: [], polls: [], routine: [], isPremium: false, isAdmin: false, filter: "all", editingId: null };
+let appState = { notices: [], settings: {}, countdowns: [], polls: [], routine: [], isAdmin: false, filter: "all", editingId: null };
 let toastTimer;
 const safeText = (value) => String(value ?? "");
 function showToast(message) { const toast = $("#toast"); toast.textContent = message; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("show"), 2800); }
@@ -37,7 +37,7 @@ function openSyllabus(ct) {
   ct = ct || {};
   $("#sylTitle").textContent = ct.title || "Countdown";
   $("#sylDate").textContent = "Date: " + (ct.datetime ? prettyDate(ct.datetime, true) : "Not scheduled");
-  $("#sylBody").textContent = ct.syllabus || "No extra details.";
+  $("#sylBody").textContent = ct.syllabus || "No syllabus added yet.";
   showModal("sylModal");
 }
 function buildCtSlider(n) {
@@ -55,7 +55,7 @@ function buildCtSlider(n) {
       const box = el("div", "cd-" + key), num = el("strong", "", "--"); box.append(num, el("span", "", label)); countdown.append(box); nums[key] = num;
     });
     const foot = el("div", "ct-foot"), status = el("span", "pill");
-    const toggle = el("button", "ct-syllabus-toggle", "See details"); toggle.type = "button"; toggle.setAttribute("aria-haspopup", "dialog");
+    const toggle = el("button", "ct-syllabus-toggle", "See syllabus"); toggle.type = "button"; toggle.setAttribute("aria-haspopup", "dialog");
     const ref = { title, meta, status, nums, card, toggle, ct: null };
     toggle.addEventListener("click", () => openSyllabus(ref.ct));
     foot.append(status, toggle);
@@ -102,7 +102,6 @@ function renderCountdown() {
     const r = ctRefs[i]; if (!r) return;
     r.title.textContent = ct.title || "Countdown";
     r.meta.textContent = ct.datetime ? prettyDate(ct.datetime, true) : "Not scheduled";
-    r.toggle.hidden = !ct.syllabus;
     r.ct = ct;
   });
   tickCountdown();
@@ -125,7 +124,7 @@ function tickCountdown() {
   });
 }
 const expandedIds = new Set();
-const REACTS = [["love", "❤️", "Love"], ["halo", "😇", "Saint smile"], ["upside", "🙃", "Upside-down saint smile"]];
+const REACTS = [["love", "i-heart", "Love"], ["smile", "i-smile", "Smile"], ["upside", "i-smile-up", "Upside-down smile"]];
 const URL_RE = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 function linkify(text) {
   const frag = document.createDocumentFragment(); let last = 0;
@@ -146,9 +145,9 @@ async function copyText(text) {
 }
 function buildReacts(n) {
   const box = el("div", "reacts");
-  REACTS.forEach(([kind, emoji, label]) => {
-    const on = n.mine === kind, b = el("button", "react-btn" + (on ? " on" : "")); b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.setAttribute("aria-pressed", on ? "true" : "false");
-    b.append(el("span", "react-emo", emoji), el("span", "react-n", String((n.reactions || {})[kind] || 0)));
+  REACTS.forEach(([kind, iconId, label]) => {
+    const on = n.mine === kind, b = el("button", "react-btn k-" + kind + (on ? " on" : "")); b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.setAttribute("aria-pressed", on ? "true" : "false");
+    const ic = icon(iconId); ic.setAttribute("class", "ic react-ic"); b.append(ic, el("span", "react-n", String((n.reactions || {})[kind] || 0)));
     b.addEventListener("click", () => reactTo(n, kind)); box.append(b);
   });
   return box;
@@ -180,18 +179,26 @@ function noticeCard(n) {
   const more = el("button", "see-more", "See more"); more.type = "button"; more.hidden = true;
   more.addEventListener("click", () => { if (expandedIds.has(n.id)) expandedIds.delete(n.id); else expandedIds.add(n.id); $$(`[data-notice-id="${n.id}"]`).forEach(applyClamp); });
   const actions = el("div", "notice-actions"), copy = el("button", "copy-btn"); copy.type = "button"; copy.title = "Copy this update"; copy.setAttribute("aria-label", "Copy this update");
-  copy.append(icon("i-copy"), el("span", "", "Copy")); copy.addEventListener("click", () => copyText(`${n.title}\n\n${n.body}`));
+  copy.append(icon("i-copy")); copy.addEventListener("click", () => copyText(`${n.title}\n\n${n.body}`));
   actions.append(buildReacts(n), copy);
   const footer = el("div", "notice-footer"); footer.append(el("span", "", formatCreated(n.created_at)), el("span", "notice-date", n.relevant_date ? prettyDate(n.relevant_date) : ""));
   article.append(meta, el("h3", "", n.title), body, more, actions, footer);
   return article;
+}
+function pinTile(n) {
+  const t = el("article", "pin-tile"); t.tabIndex = 0; t.setAttribute("role", "button"); t.setAttribute("aria-label", "Open pinned notice: " + n.title);
+  const av = el("div", "pin-avatar"), badge = el("span", "pin-badge"); av.append(icon(CAT_ICON[n.category] || "i-spark")); badge.append(icon("i-pin")); av.append(badge);
+  const open = () => { location.hash = "notice-" + n.id; };
+  t.addEventListener("click", open); t.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+  t.append(av, el("small", "pin-cat", n.category), el("h3", "", n.title), el("span", "pin-date", n.relevant_date ? prettyDate(n.relevant_date) : formatCreated(n.created_at).replace("Posted ", "")));
+  return t;
 }
 function renderNotices() {
   const list = $("#noticeList"), filtered = appState.notices.filter(n => appState.filter === "all" || n.category === appState.filter);
   list.innerHTML = ""; $("#emptyState").classList.toggle("hidden", filtered.length > 0); list.classList.toggle("hidden", filtered.length === 0);
   filtered.forEach(n => list.append(noticeCard(n)));
   const pins = appState.notices.filter(n => n.pinned), pl = $("#pinnedList"); pl.innerHTML = "";
-  pins.forEach(n => pl.append(noticeCard(n))); $("#pinnedEmpty").classList.toggle("hidden", pins.length > 0);
+  pins.forEach(n => pl.append(pinTile(n))); $("#pinnedEmpty").classList.toggle("hidden", pins.length > 0);
   requestAnimationFrame(fitNotices);
 }
 window.addEventListener("resize", fitNotices);
@@ -216,7 +223,7 @@ function pollCard(p) {
     b.append(bar, tick, el("span", "poll-label", label), num); b.addEventListener("click", () => castVote(p, i)); opts.append(b);
   });
   const foot = el("div", "poll-foot"), who = el("button", "poll-who"); who.type = "button";
-  who.append(icon("i-lock"), document.createTextNode("See who voted"), el("span", "prem-tag", "Premium")); who.addEventListener("click", () => openVoters(p));
+  who.append(icon("i-user"), document.createTextNode("See who voted")); who.addEventListener("click", () => openVoters(p));
   foot.append(el("span", "", votesLabel(p.total)), who);
   card.append(top, el("h3", "poll-q", p.question), opts, foot);
   return card;
@@ -240,7 +247,6 @@ async function castVote(p, i) {
     await loadData(true);
   } catch (error) { showToast(error.message); }
 }
-let pendingVoterPoll = null;
 async function openVoters(p) {
   try {
     const d = await api(`/api/polls/${p.id}/voters`);
@@ -253,18 +259,9 @@ async function openVoters(p) {
     });
     showModal("votersModal");
   } catch (error) {
-    if (/premium/i.test(error.message)) { pendingVoterPoll = p; $("#premiumError").textContent = ""; $("#premiumCode").value = ""; showModal("premiumModal"); }
-    else showToast(error.message);
+    showToast(error.message);
   }
 }
-$("#premiumForm").addEventListener("submit", async (e) => {
-  e.preventDefault(); $("#premiumError").textContent = "";
-  try {
-    await api("/api/premium", { method: "POST", body: JSON.stringify({ code: $("#premiumCode").value }) });
-    closeModal("premiumModal"); appState.isPremium = true; showToast("Premium unlocked.");
-    if (pendingVoterPoll) { const p = pendingVoterPoll; pendingVoterPoll = null; openVoters(p); }
-  } catch (error) { $("#premiumError").textContent = error.message; }
-});
 const CAT_ICON = { "Class": "i-book", "Assignment": "i-feed", "Quiz / CT": "i-clock", "Exam": "i-exam", "Other": "i-spark" };
 function icon(id) { const ns = "http://www.w3.org/2000/svg", s = document.createElementNS(ns, "svg"), u = document.createElementNS(ns, "use"); s.setAttribute("class", "ic"); s.setAttribute("aria-hidden", "true"); u.setAttribute("href", "#" + id); s.append(u); return s; }
 function iconBtn(cls, label, id, fn) { const b = el("button", "mini-button ic-only " + cls); b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.append(icon(id)); b.addEventListener("click", fn); return b; }
@@ -328,11 +325,11 @@ async function loadData(silent = false) {
   try {
     const data = await api("/api/bootstrap");
     lastRev = data.rev ?? lastRev;
-    const sig = JSON.stringify([data.notices, data.settings, data.countdowns, data.polls, data.routine, data.isAdmin, data.isPremium]);
+    const sig = JSON.stringify([data.notices, data.settings, data.countdowns, data.polls, data.routine, data.isAdmin]);
     if (sig === dataSig) return;
     dataSig = sig;
     appState.notices = data.notices || []; appState.settings = data.settings || {}; appState.countdowns = data.countdowns || []; appState.polls = data.polls || []; appState.routine = data.routine || [];
-    appState.isAdmin = Boolean(data.isAdmin); appState.isPremium = Boolean(data.isPremium);
+    appState.isAdmin = Boolean(data.isAdmin);
     renderCountdown(); renderPolls(); renderNotices(); consumePending(); pendingNotice = null; renderInfoPanels(); updateProfile(); updateNotifs();
     if (appState.isAdmin) {
       renderAdminNotices(); fillCtForm(); loadStats();
@@ -752,6 +749,7 @@ function showView(name, push = true) {
   if (!VIEWS.includes(name)) name = "home";
   VIEWS.forEach(v => $("#view-" + v).classList.toggle("hidden", v !== name));
   $$(".nav-btn").forEach(b => { const on = b.dataset.view === name; b.classList.toggle("active", on); if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+  document.body.classList.toggle("on-home", name === "home");
   if (push) history.replaceState(null, "", "#" + name);
   window.scrollTo(0, 0);
   if (name === "home") goToCt(ctIndex, false);
