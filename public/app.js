@@ -57,7 +57,7 @@ function buildCtSlider(n) {
     const toggle = el("button", "ct-syllabus-toggle", "See syllabus"); toggle.type = "button"; toggle.setAttribute("aria-haspopup", "dialog");
     const ref = { title, meta, status, nums, card, toggle, ct: null };
     toggle.addEventListener("click", () => openSyllabus(ref.ct));
-    foot.append(status, toggle);
+    foot.append(toggle, status);
     card.append(mid, countdown, foot); slide.append(card); track.append(slide);
     ctRefs.push(ref);
     const dot = el("button", "ct-dot"); dot.type = "button"; dot.setAttribute("aria-label", `Show countdown ${i + 1}`);
@@ -669,7 +669,7 @@ function renderClassRoutine() {
   if (!list.length) { box.append(el("div", "info-empty", rtDay === today ? "No class today. Enjoy your day!" : "No class on " + DAY_NAMES[rtDay] + ".")); return; }
   list.forEach(c => {
     const s = toMin(c.start_time), e = toMin(c.end_time), live = rtDay === today && s !== null && now >= s && (e === null ? now < s + 60 : now < e);
-    const card = el("article", "cls-card" + (live ? " live" : "")), time = el("div", "cls-time"), main = el("div", "cls-main");
+    const card = el("article", "cls-card" + (live ? " live" : "")); card.dataset.day = rtDay; const time = el("div", "cls-time"), main = el("div", "cls-main");
     time.append(el("strong", "", fmt12(c.start_time)), el("span", "", c.end_time ? fmt12(c.end_time) : ""));
     const title = el("h3", "", c.course); if (live) title.append(el("span", "cls-now", "Now"));
     main.append(title); const meta = el("div", "cls-meta");
