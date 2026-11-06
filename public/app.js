@@ -47,9 +47,8 @@ function buildCtSlider(n) {
     const slide = el("article", "ct-slide");
     slide.setAttribute("role", "group"); slide.setAttribute("aria-roledescription", "slide"); slide.setAttribute("aria-label", `Countdown ${i + 1} of ${n}`);
     const card = el("div", "ct-card");
-    const top = el("div", "ct-top"), head = el("div", "ct-heading");
-    const title = el("h2"), meta = el("p", "ct-date");
-    head.append(el("span", "ct-eyebrow", "Countdown"), title, meta); top.append(head);
+    const mid = el("div", "ct-mid"), title = el("h2", "ct-title"), meta = el("p", "ct-date");
+    mid.append(title, meta);
     const countdown = el("div", "countdown"), nums = {};
     [["days", "Days"], ["hours", "Hours"], ["minutes", "Minutes"], ["seconds", "Seconds"]].forEach(([key, label]) => {
       const box = el("div", "cd-" + key), num = el("strong", "", "--"); box.append(num, el("span", "", label)); countdown.append(box); nums[key] = num;
@@ -59,7 +58,7 @@ function buildCtSlider(n) {
     const ref = { title, meta, status, nums, card, toggle, ct: null };
     toggle.addEventListener("click", () => openSyllabus(ref.ct));
     foot.append(status, toggle);
-    card.append(top, countdown, foot); slide.append(card); track.append(slide);
+    card.append(countdown, mid, foot); slide.append(card); track.append(slide);
     ctRefs.push(ref);
     const dot = el("button", "ct-dot"); dot.type = "button"; dot.setAttribute("aria-label", `Show countdown ${i + 1}`);
     dot.addEventListener("click", () => { goToCt(i, true); startCtAuto(); });
