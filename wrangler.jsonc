@@ -1,5 +1,5 @@
 {
-  "name": "bup-ice-portal",
+  "name": "class-updates",
   "main": "src/index.js",
   "compatibility_date": "2026-10-28",
   "assets": {
@@ -11,7 +11,14 @@
     {
       "binding": "DB",
       "database_name": "bup-ice-db",
-      "database_id": "7787a872-950f-4d5f-93c4-f23efe424b93"
+      "database_id": "ea7b4b90-f2d5-4123-99a0-da672173c5cc"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "ADMIN_PASSWORD",
+      "store_id": "c2b9d6df9ee2438c9a3f0cdca1c21d88",
+      "secret_name": "ADMIN_PASSWORD"
     }
   ],
   "vars": {
