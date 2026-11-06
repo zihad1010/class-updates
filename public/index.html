@@ -30,6 +30,7 @@
 <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l2 5.5L19.5 10 14 12l-2 5.5L10 12 4.5 10 10 8.5z"/></symbol>
 <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3zM12 14v7"/></symbol><symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/></symbol><symbol id="i-send" viewBox="0 0 24 24"><path d="M3 11l18-7-7 18-3-8z"/></symbol><symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M15 8l4 4-4 4M19 12H9"/></symbol><symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
 <symbol id="i-poll" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="3"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path style="fill:var(--face-fill,none)" d="M12 21s-7.5-4.7-9.4-9.6C1.4 8 3.6 4.6 7 4.6c2 0 3.7 1.1 5 3 1.3-1.9 3-3 5-3 3.4 0 5.6 3.4 4.4 6.8C19.5 16.3 12 21 12 21z"/></symbol><symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" style="fill:var(--face-fill,none)"/><path style="stroke:var(--feat,currentColor)" d="M8.6 9.6v1.2M15.4 9.6v1.2M8 14.4c1 1.6 2.3 2.4 4 2.4s3-.8 4-2.4"/></symbol><symbol id="i-smile-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" style="fill:var(--face-fill,none)"/><g transform="rotate(180 12 12)"><path style="stroke:var(--feat,currentColor)" d="M8.6 9.6v1.2M15.4 9.6v1.2M8 14.4c1 1.6 2.3 2.4 4 2.4s3-.8 4-2.4"/></g></symbol>
 </defs></svg>
 <div class="app">
   <header class="topbar">
@@ -41,6 +42,7 @@
       <h1 class="sr">Home</h1>
       <div id="pollList" class="poll-list"></div>
       <section id="ctWrap" class="ct-wrap" aria-label="Countdowns" aria-roledescription="carousel"><div id="ctSlider" class="ct-slider"></div><div id="ctDots" class="ct-dots"></div></section>
+      <div class="home-sheet">
       <div class="quick">
         <button type="button" class="stat" data-open="upModal" aria-haspopup="dialog"><span class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg></span><span class="stat-text"><strong>Upcoming CT</strong><small id="upCount"></small></span></button>
         <button type="button" class="stat" data-open="exModal" aria-haspopup="dialog"><span class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-exam"/></svg></span><span class="stat-text"><strong>Routine</strong><small id="exCount"></small></span></button>
@@ -48,8 +50,9 @@
         <button type="button" class="stat" id="soonPill" aria-disabled="true"><span class="stat-icon"><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg></span><span class="stat-text"><strong>Coming soon</strong></span></button>
       </div>
       <div class="sec-head"><h2>Pinned notices</h2></div>
-      <div id="pinnedList" class="notice-list"></div>
+      <div id="pinnedList" class="pin-row"></div>
       <div id="pinnedEmpty" class="empty-state hidden"><h3>Nothing pinned</h3><p>Important notices pinned by the CR will stay here.</p></div>
+      </div>
     </section>
     <section id="view-feed" class="view hidden">
       <div class="sec-head"><div><h1 class="page-title">Notice feed</h1><p class="page-sub">Everything your CR has published.</p></div><button id="refreshBtn" class="button button-soft">Refresh</button></div>
@@ -93,12 +96,10 @@
 
   <div id="notifModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="notifTitle"><div class="modal-backdrop" data-close="notifModal"></div><div class="modal-card"><button class="modal-close" data-close="notifModal" aria-label="Close">×</button><h2 id="notifTitle">Notifications</h2><p>New updates from your CR.</p><button id="alertBtn" class="button button-soft full-width" type="button" style="margin-bottom:12px">Turn on phone alerts</button><div id="notifBody"></div></div></div>
 
-<div id="sylModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sylTitle"><div class="modal-backdrop" data-close="sylModal"></div><div class="modal-card info-card"><button class="modal-close" data-close="sylModal" aria-label="Close">×</button><div class="modal-icon">▤</div><div class="eyebrow">Details</div><h2 id="sylTitle">Countdown</h2><p id="sylDate"></p><div id="sylBody" class="syllabus-text"></div></div></div>
+<div id="sylModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sylTitle"><div class="modal-backdrop" data-close="sylModal"></div><div class="modal-card info-card"><button class="modal-close" data-close="sylModal" aria-label="Close">×</button><div class="modal-icon">▤</div><div class="eyebrow">Syllabus</div><h2 id="sylTitle">Countdown</h2><p id="sylDate"></p><div id="sylBody" class="syllabus-text"></div></div></div>
 
 <div id="pushModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pushTitle"><div class="modal-backdrop" data-close="pushModal"></div><div class="modal-card"><button class="modal-close" data-close="pushModal" aria-label="Close">×</button><div class="modal-icon">🔔</div><h2 id="pushTitle">Turn on phone alerts?</h2><p>Get a notification on your phone whenever the CR publishes a new notice.</p><button id="pushAllow" class="button button-primary full-width" type="button">Allow notifications</button></div></div>
 <div id="nameModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="nameTitle"><div class="modal-backdrop" data-close="nameModal"></div><div class="modal-card"><button class="modal-close" data-close="nameModal" aria-label="Close">×</button><div class="modal-icon">✎</div><h2 id="nameTitle">Your name</h2><p>Write the name you want to use for voting. It is saved on this phone only.</p><form id="nameForm"><input id="voterName" maxlength="40" required placeholder="e.g. Rahim"><button class="button button-primary full-width" type="submit" style="margin-top:12px">Continue</button></form></div></div>
-
-<div id="premiumModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="premTitle"><div class="modal-backdrop" data-close="premiumModal"></div><div class="modal-card"><button class="modal-close" data-close="premiumModal" aria-label="Close">×</button><div class="modal-icon prem-icon"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></div><div class="eyebrow">Premium</div><h2 id="premTitle">See who voted</h2><p>Seeing each person's choice is a premium feature. Enter your premium code to unlock it.</p><form id="premiumForm"><input id="premiumCode" type="password" autocomplete="off" required placeholder="Premium code"><button class="button button-primary full-width" type="submit" style="margin-top:12px">Unlock</button><div id="premiumError" class="form-error" role="alert"></div></form></div></div>
 
 <div id="votersModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="votersTitle"><div class="modal-backdrop" data-close="votersModal"></div><div class="modal-card info-card"><button class="modal-close" data-close="votersModal" aria-label="Close">×</button><div class="eyebrow">Poll</div><h2 id="votersTitle"></h2><p>Who voted for what.</p><div id="votersBody"></div></div></div>
 
