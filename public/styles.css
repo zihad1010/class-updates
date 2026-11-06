@@ -493,3 +493,41 @@ button.cal-day.has-ev.selected{box-shadow:0 0 0 3px #fff,0 0 0 5px var(--black)}
 .react-btn.pop .react-ic{animation:rpop .4s cubic-bezier(.3,1.6,.5,1)}
 .copy-btn{border:0;background:none;padding:4px 6px;color:var(--ink2)}
 .copy-btn .ic{width:23px;height:23px;stroke-width:1.7}
+
+/* ===== v5: home like the reference design ===== */
+body.on-home{background:#d6ded2 linear-gradient(180deg,#f3efb0 0,#e4e8c0 130px,#d2dccd 320px,#d6ded2 100%)}
+:root[data-theme=dark] body.on-home{background:var(--bg) linear-gradient(180deg,#2a5640 0,#1a3a2a 240px,var(--bg) 520px)}
+.home-sheet{position:relative;margin:-120px -18px calc(-112px - env(safe-area-inset-bottom));padding:150px 18px calc(124px + env(safe-area-inset-bottom));background:#fcfcfb;border-radius:42px 42px 0 0;min-height:60vh}
+:root[data-theme=dark] .home-sheet{background:var(--card)}
+#ctWrap.hidden + .home-sheet{margin-top:10px;padding-top:26px}
+.ct-wrap{position:relative;z-index:2}
+.home-sheet .sec-head:first-of-type{margin-top:26px}
+
+/* countdown card: green glossy card with soft waves */
+.ct-card{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cpath d='M0 195C70 150 135 235 225 192S350 128 400 160V300H0Z' fill='%23135a38' fill-opacity='.3'/%3E%3Cpath d='M0 75C80 22 150 125 250 62S365 10 400 42V0H0Z' fill='%23ffffff' fill-opacity='.16'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(135deg,#9fd38b 0%,#6cb073 42%,#3d8956 100%);border:0;border-radius:30px;box-shadow:0 32px 38px -24px rgba(48,105,70,.9),inset 0 1px 0 rgba(255,255,255,.4)}
+:root[data-theme=dark] .ct-card{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='none'%3E%3Cpath d='M0 195C70 150 135 235 225 192S350 128 400 160V300H0Z' fill='%23062b1a' fill-opacity='.4'/%3E%3Cpath d='M0 75C80 22 150 125 250 62S365 10 400 42V0H0Z' fill='%23ffffff' fill-opacity='.1'/%3E%3C/svg%3E") center/100% 100% no-repeat,linear-gradient(135deg,#4a9d70 0%,#287350 45%,#144a31 100%);box-shadow:0 32px 38px -24px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.18)}
+.ct-card:before{display:none}
+.ct-eyebrow,.countdown span{color:rgba(255,255,255,.88)}
+.ct-top p{color:rgba(255,255,255,.88)}
+.countdown>div{border-color:rgba(255,255,255,.38);background:linear-gradient(165deg,rgba(255,255,255,.3),rgba(255,255,255,.08))}
+.cd-seconds strong{color:#fff}
+.ct-foot .pill{border-color:rgba(255,255,255,.45);color:#fff;background:rgba(0,0,0,.12)}
+.ct-syllabus-toggle{background:rgba(14,66,42,.62);border:1px solid rgba(255,255,255,.28);color:#fff}
+
+/* pinned notices: compact tiles like the reference "latest payments" cards */
+.pin-row{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x proximity;margin:0 -18px;padding:4px 18px 10px;scrollbar-width:none}
+.pin-row::-webkit-scrollbar{display:none}
+.pin-tile{flex:0 0 150px;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;gap:4px;background:#ececec;border-radius:30px;padding:16px 12px 15px;text-align:center;cursor:pointer;transition:transform .15s}
+.pin-tile:active{transform:scale(.97)}
+:root[data-theme=dark] .pin-tile{background:var(--sunk)}
+.pin-avatar{position:relative;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;margin-bottom:8px;color:#fff;background:linear-gradient(150deg,#93d08a,#3d8956);box-shadow:0 12px 18px -12px rgba(48,105,70,.95)}
+.pin-badge{position:absolute;top:-2px;right:-5px;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;color:#fff;background:linear-gradient(150deg,#dc3b36,#a72421);border:2px solid #ececec}
+:root[data-theme=dark] .pin-badge{border-color:var(--sunk)}
+.pin-badge .ic{width:12px;height:12px}
+.pin-cat{font-size:12px;color:var(--muted)}
+.pin-tile h3{margin:0;font-size:14.5px;font-weight:600;line-height:1.3;min-height:2.6em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.pin-date{font-size:12px;color:var(--ink2)}
+
+/* poll: no golden strip on top */
+.poll-card:before{display:none}
+.poll-top{margin-top:0}
