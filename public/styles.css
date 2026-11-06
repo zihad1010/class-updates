@@ -583,18 +583,43 @@ body.on-home{background:#d6ded2 linear-gradient(180deg,#f3efb0 0,#e4e8c0 130px,#
 .ct-title{font-size:clamp(15px,4.6vw,18px);font-weight:650;line-height:1.25;letter-spacing:-.01em;padding:8px 16px;border-radius:20px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .ct-date{font-size:12px;font-weight:500;padding:5px 14px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-.notice-card:before{display:none}
-.notice-card:not(.is-pinned){background:linear-gradient(150deg,rgba(38,40,39,.86),rgba(10,12,11,.8));border:1px solid rgba(255,255,255,.16);color:#fff;-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 0 0 1px rgba(255,255,255,.03),0 22px 34px -22px rgba(0,0,0,.8)}
-.notice-card:not(.is-pinned) h3{color:#fff}
-.notice-card:not(.is-pinned) .notice-body{color:rgba(255,255,255,.84)}
-.notice-card:not(.is-pinned) .category{background:rgba(255,255,255,.14);color:#fff}
-.notice-card:not(.is-pinned) .notice-footer{border-top-color:rgba(255,255,255,.16);color:rgba(255,255,255,.62)}
-.notice-card:not(.is-pinned) .notice-date{color:rgba(255,255,255,.85)}
-.notice-card:not(.is-pinned) .notice-link,.notice-card:not(.is-pinned) .see-more{color:#a6e8c4}
-.notice-card:not(.is-pinned) .react-btn,.notice-card:not(.is-pinned) .copy-btn{color:rgba(255,255,255,.82)}
-.notice-card:not(.is-pinned) .react-btn.on{color:var(--rc)}
-.notice-card:not(.is-pinned) .copy-btn:hover{background:rgba(255,255,255,.1)}
-
 /* pinned tiles: Class is no longer green */
 .pin-avatar{background:linear-gradient(150deg,#b4bec9,#6b7a89);box-shadow:0 12px 18px -12px rgba(80,95,110,.9)}
 .pin-avatar[data-cat="Class"]{background:linear-gradient(150deg,#f7a1c4,#c93e86);box-shadow:0 12px 18px -12px rgba(201,62,134,.95)}
+
+/* ===== v8: countdown boxes/title/date like the buttons, glass-black pinned card, white update cards, reactions at the very bottom ===== */
+.countdown>div{background:rgba(14,66,42,.62);border:1px solid rgba(255,255,255,.28);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
+.ct-title,.ct-date{background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.45);-webkit-backdrop-filter:none;backdrop-filter:none}
+
+/* update cards: no golden line / glow on top */
+.notice-card:before{display:none!important;content:none!important}
+.notice-card:not(.is-pinned){background:#fff;border:1px solid rgba(20,35,28,.1);color:var(--ink);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 12px 26px -20px rgba(20,35,28,.35)}
+:root[data-theme=dark] .notice-card:not(.is-pinned){background:var(--card);border-color:var(--line);box-shadow:0 12px 26px -20px rgba(0,0,0,.8)}
+.notice-card:not(.is-pinned) h3{color:var(--ink)}
+.notice-card:not(.is-pinned) .notice-body{color:var(--ink2)}
+.notice-card:not(.is-pinned) .category{background:var(--tint);border-color:transparent;color:var(--black)}
+:root[data-theme=dark] .notice-card:not(.is-pinned) .category{color:var(--acc)}
+.notice-card:not(.is-pinned) .notice-footer{border-top-color:var(--line);color:var(--muted)}
+.notice-card:not(.is-pinned) .notice-date{color:var(--ink2)}
+.notice-card:not(.is-pinned) .notice-link,.notice-card:not(.is-pinned) .see-more{color:var(--acc)}
+.notice-card:not(.is-pinned) .react-btn,.notice-card:not(.is-pinned) .copy-btn{color:var(--ink2)}
+.notice-card:not(.is-pinned) .copy-btn:hover{background:var(--sunk)}
+.notice-card.is-pinned,:root[data-theme=dark] .notice-card.is-pinned{background:linear-gradient(150deg,rgba(38,40,39,.86),rgba(10,12,11,.8));border:1px solid rgba(255,255,255,.16);color:#fff;-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);box-shadow:0 22px 34px -22px rgba(0,0,0,.8)}
+.notice-card.is-pinned h3,:root[data-theme=dark] .notice-card.is-pinned h3{color:#fff}
+.notice-card.is-pinned .notice-body,:root[data-theme=dark] .notice-card.is-pinned .notice-body{color:rgba(255,255,255,.84)}
+.notice-card.is-pinned .category,:root[data-theme=dark] .notice-card.is-pinned .category{background:rgba(255,255,255,.14);border-color:transparent;color:#fff}
+.notice-card.is-pinned .notice-footer,:root[data-theme=dark] .notice-card.is-pinned .notice-footer{border-top-color:rgba(255,255,255,.16);color:rgba(255,255,255,.62)}
+.notice-card.is-pinned .notice-date,:root[data-theme=dark] .notice-card.is-pinned .notice-date{color:rgba(255,255,255,.85)}
+.notice-card.is-pinned .notice-link,.notice-card.is-pinned .see-more,:root[data-theme=dark] .notice-card.is-pinned .notice-link,.notice-card.is-pinned .see-more{color:#a6e8c4}
+.notice-card.is-pinned .react-btn,.notice-card.is-pinned .copy-btn,:root[data-theme=dark] .notice-card.is-pinned .react-btn,.notice-card.is-pinned .copy-btn{color:rgba(255,255,255,.82)}
+.notice-card.is-pinned .copy-btn:hover{background:rgba(255,255,255,.1)}
+
+/* reactions + copy sit at the very bottom of the card */
+.notice-spacer{flex:1 1 auto;min-height:16px}
+.notice-footer{margin-top:0}
+.notice-actions{margin-top:0;padding-top:10px}
+
+/* selected reaction: no colour fill, only a bolder outline */
+.notice-card .react-btn.on{--face-fill:none;--feat:currentColor;color:var(--ink);font-weight:700}
+.notice-card .react-btn.on .react-ic{stroke-width:2.3}
+.notice-card.is-pinned .react-btn.on{color:#fff}
