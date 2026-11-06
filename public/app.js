@@ -187,7 +187,7 @@ function noticeCard(n) {
 }
 function pinTile(n) {
   const t = el("article", "pin-tile"); t.tabIndex = 0; t.setAttribute("role", "button"); t.setAttribute("aria-label", "Open pinned notice: " + n.title);
-  const av = el("div", "pin-avatar"), badge = el("span", "pin-badge"); av.append(icon(CAT_ICON[n.category] || "i-spark")); badge.append(icon("i-pin")); av.append(badge);
+  const av = el("div", "pin-avatar"); av.dataset.cat = n.category; const badge = el("span", "pin-badge"); av.append(icon(CAT_ICON[n.category] || "i-spark")); badge.append(icon("i-pin")); av.append(badge);
   const open = () => { location.hash = "notice-" + n.id; };
   t.addEventListener("click", open); t.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
   t.append(av, el("small", "pin-cat", n.category), el("h3", "", n.title), el("span", "pin-date", n.relevant_date ? prettyDate(n.relevant_date) : formatCreated(n.created_at).replace("Posted ", "")));
@@ -214,53 +214,24 @@ function pollCard(p) {
   const card = el("article", "poll-card"); card.dataset.pollId = p.id;
   const top = el("div", "poll-top"), badge = el("span", "poll-badge"); badge.append(icon("i-poll"), document.createTextNode("Poll"));
   top.append(badge, el("span", "poll-time", formatCreated(p.created_at).replace("Posted ", "")));
-  const opts = el("div", "poll-opts");
+  const opts = el("div", "poll-opts"), uniq = [...new Set(p.counts.filter(c => c > 0))].sort((a, b) => b - a);
   p.options.forEach((label, i) => {
-    const n = p.counts[i] || 0, mine = p.mine === i, b = el("button", "poll-opt" + (mine ? " on" : "")); b.type = "button"; b.setAttribute("aria-pressed", mine ? "true" : "false");
+    const n = p.counts[i] || 0, mine = p.mine === i, b = el("button", "poll-opt" + (mine ? " on" : "")); b.type = "button"; b.dataset.rank = n > 0 ? String(Math.min(uniq.indexOf(n), 5)) : "x"; b.setAttribute("aria-pressed", mine ? "true" : "false");
     const bar = el("span", "poll-bar"); bar.style.width = pct(n, p.total) + "%";
     const tick = el("span", "poll-tick"); if (mine) tick.append(icon("i-check"));
     const num = el("span", "poll-num"); num.append(el("strong", "", pct(n, p.total) + "%"), el("small", "", votesLabel(n)));
     b.append(bar, tick, el("span", "poll-label", label), num); b.addEventListener("click", () => castVote(p, i)); opts.append(b);
   });
-  const foot = el("div", "poll-foot"), who = el("button", "poll-who"); who.type = "button";
-  who.append(icon("i-user"), document.createTextNode("See who voted")); who.addEventListener("click", () => openVoters(p));
-  foot.append(el("span", "", votesLabel(p.total)), who);
+  const foot = el("div", "poll-foot"); foot.append(el("span", "", votesLabel(p.total)));
   card.append(top, el("h3", "poll-q", p.question), opts, foot);
   return card;
 }
-let nameResolve = null;
-function ensureName() {
-  let saved = ""; try { saved = localStorage.getItem("bupName") || ""; } catch {}
-  if (saved) return Promise.resolve(saved);
-  return new Promise((res) => { nameResolve = res; $("#voterName").value = ""; showModal("nameModal"); setTimeout(() => $("#voterName").focus(), 60); });
-}
-$("#nameForm").addEventListener("submit", (e) => {
-  e.preventDefault(); const v = $("#voterName").value.trim(); if (!v) return;
-  try { localStorage.setItem("bupName", v); } catch {}
-  closeModal("nameModal"); const r = nameResolve; nameResolve = null; if (r) r(v);
-});
-$$('[data-close="nameModal"]').forEach(x => x.addEventListener("click", () => { if (nameResolve) { nameResolve(null); nameResolve = null; } }));
 async function castVote(p, i) {
   try {
     if (p.mine === i) await api(`/api/polls/${p.id}/vote`, { method: "POST", body: JSON.stringify({ option: null }) });
-    else { const name = await ensureName(); if (name === null) return; await api(`/api/polls/${p.id}/vote`, { method: "POST", body: JSON.stringify({ option: i, name }) }); }
+    else await api(`/api/polls/${p.id}/vote`, { method: "POST", body: JSON.stringify({ option: i }) });
     await loadData(true);
   } catch (error) { showToast(error.message); }
-}
-async function openVoters(p) {
-  try {
-    const d = await api(`/api/polls/${p.id}/voters`);
-    $("#votersTitle").textContent = p.question; const box = $("#votersBody"); box.innerHTML = "";
-    d.options.forEach(o => {
-      const sec = el("div", "voter-group"), head = el("div", "voter-head"); head.append(el("strong", "", o.label), el("span", "", String(o.names.length))); sec.append(head);
-      if (!o.names.length) sec.append(el("div", "voter-none", "No votes yet"));
-      else { const wrap = el("div", "voter-names"); o.names.forEach(n => wrap.append(el("span", "voter-chip", n))); sec.append(wrap); }
-      box.append(sec);
-    });
-    showModal("votersModal");
-  } catch (error) {
-    showToast(error.message);
-  }
 }
 const CAT_ICON = { "Class": "i-book", "Assignment": "i-feed", "Quiz / CT": "i-clock", "Exam": "i-exam", "Other": "i-spark" };
 function icon(id) { const ns = "http://www.w3.org/2000/svg", s = document.createElementNS(ns, "svg"), u = document.createElementNS(ns, "use"); s.setAttribute("class", "ic"); s.setAttribute("aria-hidden", "true"); u.setAttribute("href", "#" + id); s.append(u); return s; }
