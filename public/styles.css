@@ -619,7 +619,6 @@ body.on-home{background:#d6ded2 linear-gradient(180deg,#f3efb0 0,#e4e8c0 130px,#
 .notice-footer{margin-top:0}
 .notice-actions{margin-top:0;padding-top:10px}
 
-/* selected reaction: no colour fill, only a bolder outline */
-.notice-card .react-btn.on{--face-fill:none;--feat:currentColor;color:var(--ink);font-weight:700}
-.notice-card .react-btn.on .react-ic{stroke-width:2.3}
-.notice-card.is-pinned .react-btn.on{color:#fff}
+/* selected reaction: filled, but with a neutral (non-coloured) fill */
+.notice-card .react-btn.on{--face-fill:var(--ink);--feat:var(--card);color:var(--ink);font-weight:700}
+.notice-card.is-pinned .react-btn.on{--face-fill:#fff;--feat:#111;color:#fff}
