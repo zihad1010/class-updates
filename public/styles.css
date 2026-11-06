@@ -574,3 +574,27 @@ body.on-home{background:#d6ded2 linear-gradient(180deg,#f3efb0 0,#e4e8c0 130px,#
 .poll-opt.on .poll-num small{color:var(--muted)}
 .poll-opt.on .poll-tick{background:var(--rk);border-color:var(--rk);color:#fff}
 .poll-opt .poll-tick{border-color:rgba(var(--rkr),.7)}
+
+/* ===== v7: countdown layout (time on top, title+date in the middle), glass-black notice cards, no gold line ===== */
+.ct-top{display:none}
+.ct-card{justify-content:space-between;gap:10px}
+.ct-mid{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center}
+.ct-title,.ct-date{margin:0;max-width:100%;color:#fff;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.45);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);text-shadow:0 1px 8px rgba(0,0,0,.5)}
+.ct-title{font-size:clamp(15px,4.6vw,18px);font-weight:650;line-height:1.25;letter-spacing:-.01em;padding:8px 16px;border-radius:20px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.ct-date{font-size:12px;font-weight:500;padding:5px 14px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.notice-card:before{display:none}
+.notice-card:not(.is-pinned){background:linear-gradient(150deg,rgba(38,40,39,.86),rgba(10,12,11,.8));border:1px solid rgba(255,255,255,.16);color:#fff;-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 0 0 1px rgba(255,255,255,.03),0 22px 34px -22px rgba(0,0,0,.8)}
+.notice-card:not(.is-pinned) h3{color:#fff}
+.notice-card:not(.is-pinned) .notice-body{color:rgba(255,255,255,.84)}
+.notice-card:not(.is-pinned) .category{background:rgba(255,255,255,.14);color:#fff}
+.notice-card:not(.is-pinned) .notice-footer{border-top-color:rgba(255,255,255,.16);color:rgba(255,255,255,.62)}
+.notice-card:not(.is-pinned) .notice-date{color:rgba(255,255,255,.85)}
+.notice-card:not(.is-pinned) .notice-link,.notice-card:not(.is-pinned) .see-more{color:#a6e8c4}
+.notice-card:not(.is-pinned) .react-btn,.notice-card:not(.is-pinned) .copy-btn{color:rgba(255,255,255,.82)}
+.notice-card:not(.is-pinned) .react-btn.on{color:var(--rc)}
+.notice-card:not(.is-pinned) .copy-btn:hover{background:rgba(255,255,255,.1)}
+
+/* pinned tiles: Class is no longer green */
+.pin-avatar{background:linear-gradient(150deg,#b4bec9,#6b7a89);box-shadow:0 12px 18px -12px rgba(80,95,110,.9)}
+.pin-avatar[data-cat="Class"]{background:linear-gradient(150deg,#f7a1c4,#c93e86);box-shadow:0 12px 18px -12px rgba(201,62,134,.95)}
