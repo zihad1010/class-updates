@@ -1,5 +1,5 @@
-const CACHE = "bup-ice-v6";
-const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/logo-white.png"];
+const CACHE = "bup-ice-v7";
+const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/countdown-bg.jpg", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/logo-white.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -70,3 +70,4 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
+
