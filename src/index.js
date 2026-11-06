@@ -8,11 +8,15 @@ import { buildPushPayload } from "@block65/webcrypto-web-push";
 const CATEGORIES = ["Class", "Assignment", "Quiz / CT", "Exam", "Other"];
 const SESSION_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const enc = new TextEncoder();
-const REACTION_KINDS = ["love", "halo", "upside"]; // love, saint smile, upside-down saint smile
-const PREMIUM_SECONDS = 30 * 24 * 60 * 60;
+const REACTION_KINDS = ["love", "smile", "upside"]; // love, upright smile, upside-down smile
 
 // Tables are created automatically on first request, so no manual SQL step is needed.
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'Other', body TEXT NOT NULL, relevant_date TEXT, pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_notices_pinned_created ON notices (pinned DESC, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), ct_datetime TEXT NOT NULL DEFAULT '', syllabus_title TEXT NOT NULL DEFAULT '', syllabus_text TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `INSERT OR IGNORE INTO settings (id, ct_datetime, syllabus_title, syllabus_text) VALUES (1, '', '', '')`,
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS countdowns (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, target TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL, options TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS poll_votes (poll_id INTEGER NOT NULL, voter_id TEXT NOT NULL, option_idx INTEGER NOT NULL, voter_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (poll_id, voter_id))`,
@@ -20,6 +24,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS devices (voter_id TEXT PRIMARY KEY, first_seen TEXT NOT NULL DEFAULT (datetime('now')), last_seen TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS class_routine (id INTEGER PRIMARY KEY AUTOINCREMENT, day INTEGER NOT NULL, course TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL DEFAULT '', room TEXT NOT NULL DEFAULT '', faculty TEXT NOT NULL DEFAULT '')`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL DEFAULT 0)`,
+  `UPDATE reactions SET kind = 'smile' WHERE kind = 'halo'`, // old halo smile becomes the plain smile
 ];
 let schemaReady = null;
 function ensureSchema(env) {
@@ -108,16 +113,6 @@ async function isAdmin(request, env) {
 
 function sessionCookie(token, maxAge, name = "session") {
   return `${name}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
-}
-
-async function isPremiumUser(request, env) {
-  if (await isAdmin(request, env)) return true;
-  const token = getCookie(request, "premium");
-  if (!token) return false;
-  const [expStr, sig] = token.split(".");
-  const exp = Number(expStr);
-  if (!exp || !sig || exp < Date.now()) return false;
-  return safeEqual(sig, await hmacHex(await sessionSecret(env), "premium:" + exp));
 }
 
 async function readBody(request) {
@@ -290,7 +285,6 @@ async function handleApi(request, env, url, ctx) {
         return { id: p.id, question: p.question, options, counts, total: counts.reduce((a, b) => a + b, 0), mine: myV[p.id] ?? null, created_at: p.created_at };
       }),
       isAdmin: await isAdmin(request, env),
-      isPremium: await isPremiumUser(request, env),
       routine: routine.results || [],
       rev,
     });
@@ -358,10 +352,9 @@ async function handleApi(request, env, url, ctx) {
     return json({ ok: true });
   }
 
-  // Premium: who voted for what
+  // Who voted for what (open to everyone)
   const votersMatch = path.match(/^\/api\/polls\/(\d+)\/voters$/);
   if (votersMatch && method === "GET") {
-    if (!(await isPremiumUser(request, env))) return json({ error: "Premium feature.", premium: false }, 403);
     const id = Number(votersMatch[1]);
     const poll = await env.DB.prepare(`SELECT options FROM polls WHERE id = ?`).bind(id).first();
     if (!poll) return json({ error: "Poll not found." }, 404);
@@ -371,21 +364,6 @@ async function handleApi(request, env, url, ctx) {
     return json({
       options: options.map((label, i) => ({ label, names: (results || []).filter((r) => r.option_idx === i).map((r) => r.voter_name || "Anonymous") })),
     });
-  }
-
-  if (path === "/api/premium" && method === "POST") {
-    const { code } = await readBody(request);
-    const real = await getSecret(env, "PREMIUM_CODE");
-    if (!real) return json({ error: "Premium is not enabled yet." }, 400);
-    const a = await hmacHex("premium-check", String(code ?? "").trim());
-    const b = await hmacHex("premium-check", real);
-    if (!safeEqual(a, b)) {
-      await new Promise((r) => setTimeout(r, 500));
-      return json({ error: "Incorrect premium code." }, 401);
-    }
-    const exp = Date.now() + PREMIUM_SECONDS * 1000;
-    const token = `${exp}.${await hmacHex(await sessionSecret(env), "premium:" + exp)}`;
-    return json({ ok: true }, 200, { "Set-Cookie": sessionCookie(token, PREMIUM_SECONDS, "premium") });
   }
 
   if (path === "/api/login" && method === "POST") {
