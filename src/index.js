@@ -352,20 +352,6 @@ async function handleApi(request, env, url, ctx) {
     return json({ ok: true });
   }
 
-  // Who voted for what (open to everyone)
-  const votersMatch = path.match(/^\/api\/polls\/(\d+)\/voters$/);
-  if (votersMatch && method === "GET") {
-    const id = Number(votersMatch[1]);
-    const poll = await env.DB.prepare(`SELECT options FROM polls WHERE id = ?`).bind(id).first();
-    if (!poll) return json({ error: "Poll not found." }, 404);
-    let options = [];
-    try { options = JSON.parse(poll.options); } catch {}
-    const { results } = await env.DB.prepare(`SELECT option_idx, voter_name FROM poll_votes WHERE poll_id = ? ORDER BY created_at ASC`).bind(id).all();
-    return json({
-      options: options.map((label, i) => ({ label, names: (results || []).filter((r) => r.option_idx === i).map((r) => r.voter_name || "Anonymous") })),
-    });
-  }
-
   if (path === "/api/login" && method === "POST") {
     const { password } = await readBody(request);
     const a = await hmacHex("password-check", String(password ?? ""));
