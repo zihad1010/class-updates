@@ -680,3 +680,26 @@ body.on-home{background:#d3d4d1 linear-gradient(180deg,#ebebe8 0,#dfdfdc 130px,#
 .cls-time span{color:var(--ink2)}
 
 .ct-foot{justify-content:space-between}
+
+/* ===== v12: login / sign up screen, students tab ===== */
+body.locked{overflow:hidden}
+.auth-screen{position:fixed;inset:0;z-index:300;overflow:auto;display:grid;place-items:center;padding:24px 18px;background:#d3d4d1 linear-gradient(180deg,#ebebe8 0,#dfdfdc 160px,#d3d4d1 380px,#d3d4d1 100%)}
+:root[data-theme=dark] .auth-screen{background:var(--bg) linear-gradient(180deg,#2a5640 0,#1a3a2a 260px,var(--bg) 560px)}
+.auth-card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:32px;padding:26px 22px 22px;box-shadow:0 30px 50px -30px rgba(0,0,0,.45)}
+.auth-brand{text-align:center;margin-bottom:18px}
+.auth-brand h1{margin:0 0 6px;font-size:26px;letter-spacing:-.03em}
+.auth-brand p{margin:0;font-size:13.5px;color:var(--muted)}
+.auth-seg{display:flex;margin-bottom:12px}.auth-seg button{flex:1}
+.auth-tabs{display:flex;gap:6px;margin-bottom:16px}
+.auth-tabs button{flex:1;border:0;background:transparent;border-bottom:2px solid var(--line);color:var(--muted);padding:9px 4px;font-weight:600;font-size:14px;cursor:pointer}
+.auth-tabs button.active{color:var(--ink);border-bottom-color:var(--black)}
+.auth-field{margin-bottom:12px}
+.auth-field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin:0 0 5px 4px}
+.auth-field input{width:100%;box-sizing:border-box;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--sunk);color:var(--ink);font:inherit}
+.auth-field input:focus{outline:2px solid var(--black);outline-offset:1px}
+#authSubmit{margin-top:6px}
+.tab-badge{position:absolute;top:2px;right:6px;min-width:18px;height:18px;border-radius:9px;background:#d93a35;color:#fff;font-style:normal;font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 5px}
+.admin-tab{position:relative}
+.room-code-box{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:20px;padding:14px 16px;margin-bottom:12px;background:var(--sunk)}
+.room-code-box small{display:block;color:var(--muted);font-size:12px}
+.room-code-box strong{font-size:24px;letter-spacing:.14em}
