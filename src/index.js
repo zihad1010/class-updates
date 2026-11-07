@@ -1,49 +1,80 @@
-// BUP ICE Class Update Portal - Cloudflare Worker backend
-// Bindings needed: DB (D1), ASSETS (static files), secret ADMIN_PASSWORD
-// Optional secret: SESSION_SECRET (if not set, ADMIN_PASSWORD is used to sign sessions)
-// Push notifications: secrets VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (e.g. mailto:you@example.com)
+// Class Update Portal - Cloudflare Worker backend (multi-room: each CR has a room, students join with approval)
+// Bindings needed: DB (D1), ASSETS (static files), and a signing secret: ADMIN_PASSWORD (or SESSION_SECRET).
+// Push notifications: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT.
 
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 
 const CATEGORIES = ["Class", "Assignment", "Quiz / CT", "Exam", "Other"];
-const SESSION_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const SESSION_SECONDS = 30 * 24 * 60 * 60; // stay logged in for 30 days
 const enc = new TextEncoder();
 const REACTION_KINDS = ["love", "smile", "upside"]; // love, upright smile, upside-down smile
 
-// Tables are created automatically on first request, so no manual SQL step is needed.
+// Tables are created automatically on the first request (new m_* tables, so older data is left untouched).
 const SCHEMA = [
-  `CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'Other', body TEXT NOT NULL, relevant_date TEXT, pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-  `CREATE INDEX IF NOT EXISTS idx_notices_pinned_created ON notices (pinned DESC, created_at DESC)`,
-  `CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), ct_datetime TEXT NOT NULL DEFAULT '', syllabus_title TEXT NOT NULL DEFAULT '', syllabus_text TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-  `INSERT OR IGNORE INTO settings (id, ct_datetime, syllabus_title, syllabus_text) VALUES (1, '', '', '')`,
-  `CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-  `CREATE TABLE IF NOT EXISTS countdowns (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, target TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-  `CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL, options TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-  `CREATE TABLE IF NOT EXISTS poll_votes (poll_id INTEGER NOT NULL, voter_id TEXT NOT NULL, option_idx INTEGER NOT NULL, voter_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (poll_id, voter_id))`,
-  `CREATE TABLE IF NOT EXISTS reactions (notice_id INTEGER NOT NULL, voter_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (notice_id, voter_id))`,
-  `CREATE TABLE IF NOT EXISTS devices (voter_id TEXT PRIMARY KEY, first_seen TEXT NOT NULL DEFAULT (datetime('now')), last_seen TEXT NOT NULL DEFAULT (datetime('now')))`,
-  `CREATE TABLE IF NOT EXISTS class_routine (id INTEGER PRIMARY KEY AUTOINCREMENT, day INTEGER NOT NULL, course TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL DEFAULT '', room TEXT NOT NULL DEFAULT '', faculty TEXT NOT NULL DEFAULT '')`,
-  `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL DEFAULT 0)`,
-  `UPDATE reactions SET kind = 'smile' WHERE kind = 'halo'`, // old halo smile becomes the plain smile
+  `CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, room_id INTEGER NOT NULL, username TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', pass_salt TEXT NOT NULL, pass_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now')), last_seen TEXT)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS ux_users_room_name ON users (room_id, lower(username))`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS ux_users_cr_name ON users (lower(username)) WHERE role = 'cr'`,
+  `CREATE TABLE IF NOT EXISTS m_notices (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL, title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'Other', body TEXT NOT NULL, relevant_date TEXT, pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_m_notices_room ON m_notices (room_id, pinned DESC, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS m_settings (room_id INTEGER PRIMARY KEY, ct_datetime TEXT NOT NULL DEFAULT '', syllabus_title TEXT NOT NULL DEFAULT '', syllabus_text TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS m_countdowns (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL, title TEXT NOT NULL, target TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS m_polls (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS m_votes (poll_id INTEGER NOT NULL, user_id INTEGER NOT NULL, option_idx INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (poll_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS m_reacts (notice_id INTEGER NOT NULL, user_id INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (notice_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS m_routine (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL, day INTEGER NOT NULL, course TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL DEFAULT '', room TEXT NOT NULL DEFAULT '', faculty TEXT NOT NULL DEFAULT '')`,
+  `CREATE TABLE IF NOT EXISTS m_push (endpoint TEXT PRIMARY KEY, room_id INTEGER NOT NULL, user_id INTEGER NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS m_rev (room_id INTEGER PRIMARY KEY, v INTEGER NOT NULL DEFAULT 0)`,
 ];
 let schemaReady = null;
 function ensureSchema(env) {
   if (!schemaReady) schemaReady = env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s))).catch((e) => { schemaReady = null; throw e; });
   return schemaReady;
 }
-// Every change bumps this number; phones check it every few seconds and refresh by themselves when it moves.
-async function bumpRev(env) {
-  await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('rev', 1) ON CONFLICT(k) DO UPDATE SET v = v + 1`).run();
+// Every change in a room bumps its number; phones of that room check it every few seconds and refresh by themselves.
+async function bumpRev(env, roomId) {
+  await env.DB.prepare(`INSERT INTO m_rev (room_id, v) VALUES (?, 1) ON CONFLICT(room_id) DO UPDATE SET v = v + 1`).bind(roomId).run();
 }
-async function getRev(env) {
-  return (await env.DB.prepare(`SELECT v FROM meta WHERE k = 'rev'`).first())?.v ?? 0;
-}
-function voterOf(request) {
-  const v = request.headers.get("X-Voter") || "";
-  return /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : "";
+async function getRev(env, roomId) {
+  return (await env.DB.prepare(`SELECT v FROM m_rev WHERE room_id = ?`).bind(roomId).first())?.v ?? 0;
 }
 
-// Works with both a plain Worker secret (string) and a Secrets Store binding (object with .get()).
+const normCode = (v) => String(v ?? "").trim().toUpperCase().replace(/\s+/g, "");
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const isUnique = (e) => /UNIQUE|constraint/i.test(String(e?.message || e));
+const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+const fromHex = (hex) => new Uint8Array((hex.match(/../g) || []).map((h) => parseInt(h, 16)));
+function randomHex(n) { const a = new Uint8Array(n); crypto.getRandomValues(a); return toHex(a); }
+
+// Passwords are never stored: only a salted PBKDF2 hash.
+async function hashPassword(password, saltHex) {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: fromHex(saltHex), iterations: 100000, hash: "SHA-256" }, key, 256);
+  return toHex(new Uint8Array(bits));
+}
+
+async function makeSession(env, user) {
+  const base = `${user.id}.${user.room_id}.${Date.now() + SESSION_SECONDS * 1000}`;
+  return `${base}.${await hmacHex(await sessionSecret(env), "s:" + base)}`;
+}
+async function readSession(request, env) {
+  const p = getCookie(request, "session").split(".");
+  if (p.length !== 4 || Number(p[2]) < Date.now()) return null;
+  const ok = safeEqual(p[3], await hmacHex(await sessionSecret(env), `s:${p[0]}.${p[1]}.${p[2]}`));
+  return ok ? { uid: Number(p[0]), rid: Number(p[1]) } : null;
+}
+async function currentUser(request, env) {
+  const s = await readSession(request, env);
+  if (!s) return null;
+  const row = await env.DB.prepare(
+    `SELECT u.id, u.role, u.room_id, u.username, u.name, u.status, r.code AS room_code, r.name AS room_name
+     FROM users u JOIN rooms r ON r.id = u.room_id WHERE u.id = ?`
+  ).bind(s.uid).first();
+  if (!row || row.room_id !== s.rid || row.status !== "approved") return null;
+  return row;
+}
+const meOut = (u) => ({ id: u.id, role: u.role, username: u.username, name: u.name, roomCode: u.room_code, roomName: u.room_name });
+
 async function getSecret(env, name) {
   const v = env[name];
   if (!v) return "";
@@ -86,12 +117,6 @@ async function sessionSecret(env) {
   return (await getSecret(env, "SESSION_SECRET")) || (await getSecret(env, "ADMIN_PASSWORD"));
 }
 
-async function makeSessionToken(env) {
-  const exp = Date.now() + SESSION_SECONDS * 1000;
-  const sig = await hmacHex(await sessionSecret(env), "session:" + exp);
-  return `${exp}.${sig}`;
-}
-
 function getCookie(request, name) {
   const header = request.headers.get("Cookie") || "";
   for (const part of header.split(";")) {
@@ -99,16 +124,6 @@ function getCookie(request, name) {
     if (k === name) return rest.join("=");
   }
   return "";
-}
-
-async function isAdmin(request, env) {
-  const token = getCookie(request, "session");
-  if (!token) return false;
-  const [expStr, sig] = token.split(".");
-  const exp = Number(expStr);
-  if (!exp || !sig || exp < Date.now()) return false;
-  const expected = await hmacHex(await sessionSecret(env), "session:" + exp);
-  return safeEqual(sig, expected);
 }
 
 function sessionCookie(token, maxAge, name = "session") {
@@ -146,8 +161,6 @@ function validateNotice(body) {
   };
 }
 
-// The admin form sends a datetime-local value in Bangladesh time (UTC+6).
-// We store it as a full UTC ISO string so the countdown is correct everywhere.
 function validateCountdown(body) {
   const title = String(body.title ?? "").trim();
   const note = String(body.note ?? "").trim();
@@ -182,16 +195,14 @@ function parseCtDatetime(raw) {
   return { value: d.toISOString() };
 }
 
-
-// ---------- Web Push ----------
-async function sendPushToAll(env, message) {
+async function sendPushToRoom(env, roomId, message) {
   const publicKey = await getSecret(env, "VAPID_PUBLIC_KEY");
   const privateKey = await getSecret(env, "VAPID_PRIVATE_KEY");
   const subject = (await getSecret(env, "VAPID_SUBJECT")) || "mailto:admin@example.com";
   if (!publicKey || !privateKey) { console.error("push skipped: VAPID keys missing", { hasPublic: !!publicKey, hasPrivate: !!privateKey }); return; }
   const vapid = { subject, publicKey, privateKey };
 
-  const { results } = await env.DB.prepare(`SELECT endpoint, p256dh, auth FROM push_subscriptions`).all();
+  const { results } = await env.DB.prepare(`SELECT endpoint, p256dh, auth FROM m_push WHERE room_id = ?`).bind(roomId).all();
   await Promise.all(
     (results || []).map(async (row) => {
       const subscription = { endpoint: row.endpoint, expirationTime: null, keys: { p256dh: row.p256dh, auth: row.auth } };
@@ -203,7 +214,7 @@ async function sendPushToAll(env, message) {
         );
         const res = await fetch(subscription.endpoint, payload);
         if (res.status === 404 || res.status === 410) {
-          await env.DB.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`).bind(row.endpoint).run();
+          await env.DB.prepare(`DELETE FROM m_push WHERE endpoint = ?`).bind(row.endpoint).run();
         } else if (!res.ok) {
           console.error("push rejected", res.status, (await res.text()).slice(0, 200));
         }
@@ -218,13 +229,9 @@ async function handleApi(request, env, url, ctx) {
   const path = url.pathname.replace(/\/+$/, "");
   const method = request.method;
 
-  if (path === "/api/test" && method === "GET") {
-    return json({ success: true, message: "BUP ICE API is working!" });
-  }
-
+  if (path === "/api/test" && method === "GET") return json({ success: true, message: "API is working!" });
   if (!env.DB) return json({ error: "Database is not connected." }, 500);
-  const adminPassword = await getSecret(env, "ADMIN_PASSWORD");
-  if (!adminPassword) return json({ error: "Admin password is not configured." }, 500);
+  if (!(await sessionSecret(env))) return json({ error: "Server secret is not configured." }, 500);
   await ensureSchema(env);
 
   // Basic CSRF protection for state-changing requests
@@ -233,254 +240,275 @@ async function handleApi(request, env, url, ctx) {
     if (origin && origin !== url.origin) return json({ error: "Forbidden." }, 403);
   }
 
-  const voter = voterOf(request);
-
-  // ---------- Public ----------
-  if (path === "/api/rev" && method === "GET") {
-    return json({ rev: await getRev(env) });
+  // ---------- Public: sign up / login ----------
+  if (path === "/api/signup/cr" && method === "POST") {
+    const b = await readBody(request);
+    const username = String(b.username ?? "").trim(), password = String(b.password ?? ""), code = normCode(b.room_code), roomName = String(b.room_name ?? "").trim();
+    if (!/^[A-Za-z0-9_.]{3,30}$/.test(username)) return json({ error: "Username: 3-30 letters, numbers, dot or underscore." }, 400);
+    if (password.length < 6 || password.length > 100) return json({ error: "Password must be at least 6 characters." }, 400);
+    if (!/^[A-Z0-9]{4,20}$/.test(code)) return json({ error: "Room code: 4-20 letters or numbers." }, 400);
+    if (roomName.length > 60) return json({ error: "Room name is too long (max 60)." }, 400);
+    if (await env.DB.prepare(`SELECT id FROM users WHERE role = 'cr' AND lower(username) = lower(?)`).bind(username).first()) return json({ error: "This username is already taken." }, 409);
+    let roomId;
+    try { roomId = (await env.DB.prepare(`INSERT INTO rooms (code, name) VALUES (?, ?)`).bind(code, roomName).run()).meta?.last_row_id; }
+    catch (e) { if (isUnique(e)) return json({ error: "This room code is already taken. Choose another." }, 409); throw e; }
+    const salt = randomHex(16), hash = await hashPassword(password, salt);
+    let userId;
+    try { userId = (await env.DB.prepare(`INSERT INTO users (role, room_id, username, name, pass_salt, pass_hash, status) VALUES ('cr', ?, ?, ?, ?, ?, 'approved')`).bind(roomId, username, username, salt, hash).run()).meta?.last_row_id; }
+    catch (e) { await env.DB.prepare(`DELETE FROM rooms WHERE id = ?`).bind(roomId).run(); if (isUnique(e)) return json({ error: "This username is already taken." }, 409); throw e; }
+    await env.DB.batch([
+      env.DB.prepare(`INSERT OR IGNORE INTO m_settings (room_id) VALUES (?)`).bind(roomId),
+      env.DB.prepare(`INSERT OR IGNORE INTO m_rev (room_id, v) VALUES (?, 1)`).bind(roomId),
+    ]);
+    const token = await makeSession(env, { id: userId, room_id: roomId });
+    return json({ ok: true }, 201, { "Set-Cookie": sessionCookie(token, SESSION_SECONDS) });
   }
 
-  if (path === "/api/bootstrap" && method === "GET") {
-    if (voter) {
-      ctx.waitUntil(
-        env.DB.prepare(
-          `INSERT INTO devices (voter_id) VALUES (?)
-           ON CONFLICT(voter_id) DO UPDATE SET last_seen = datetime('now') WHERE last_seen < datetime('now', '-10 minutes')`
-        ).bind(voter).run()
-      );
+  if (path === "/api/signup/student" && method === "POST") {
+    const b = await readBody(request);
+    const name = String(b.name ?? "").trim(), sid = String(b.student_id ?? "").trim(), password = String(b.password ?? ""), code = normCode(b.room_code);
+    if (name.length < 2 || name.length > 40) return json({ error: "Please write your name (2-40 characters)." }, 400);
+    if (!/^[A-Za-z0-9_.\-]{2,30}$/.test(sid)) return json({ error: "Student ID: 2-30 letters or numbers." }, 400);
+    if (password.length < 6 || password.length > 100) return json({ error: "Password must be at least 6 characters." }, 400);
+    const room = await env.DB.prepare(`SELECT id FROM rooms WHERE code = ?`).bind(code).first();
+    if (!room) { await delay(400); return json({ error: "No room found with this code." }, 404); }
+    const salt = randomHex(16), hash = await hashPassword(password, salt);
+    try { await env.DB.prepare(`INSERT INTO users (role, room_id, username, name, pass_salt, pass_hash, status) VALUES ('student', ?, ?, ?, ?, ?, 'pending')`).bind(room.id, sid, name, salt, hash).run(); }
+    catch (e) { if (isUnique(e)) return json({ error: "This ID already has an account or a pending request in this room." }, 409); throw e; }
+    await bumpRev(env, room.id);
+    return json({ ok: true, pending: true }, 201);
+  }
+
+  if (path === "/api/login" && method === "POST") {
+    const b = await readBody(request);
+    const password = String(b.password ?? "");
+    let row = null;
+    if (b.role === "cr") {
+      row = await env.DB.prepare(`SELECT * FROM users WHERE role = 'cr' AND lower(username) = lower(?)`).bind(String(b.username ?? "").trim()).first();
+    } else {
+      const room = await env.DB.prepare(`SELECT id FROM rooms WHERE code = ?`).bind(normCode(b.room_code)).first();
+      if (room) row = await env.DB.prepare(`SELECT * FROM users WHERE role = 'student' AND room_id = ? AND lower(username) = lower(?)`).bind(room.id, String(b.student_id ?? "").trim()).first();
     }
-    const [notices, settings, countdowns, polls, pollCounts, myVotes, reactCounts, myReacts, rev, routine] = await Promise.all([
-      env.DB.prepare(
-        `SELECT id, title, category, body, relevant_date, pinned, created_at
-         FROM notices ORDER BY pinned DESC, created_at DESC, id DESC`
-      ).all(),
-      env.DB.prepare(`SELECT ct_datetime, syllabus_title, syllabus_text FROM settings WHERE id = 1`).first(),
-      env.DB.prepare(`SELECT id, title, target, note FROM countdowns ORDER BY target ASC, id ASC`).all(),
-      env.DB.prepare(`SELECT id, question, options, created_at FROM polls ORDER BY id DESC LIMIT 20`).all(),
-      env.DB.prepare(`SELECT poll_id, option_idx, COUNT(*) AS n FROM poll_votes GROUP BY poll_id, option_idx`).all(),
-      voter ? env.DB.prepare(`SELECT poll_id, option_idx FROM poll_votes WHERE voter_id = ?`).bind(voter).all() : Promise.resolve({ results: [] }),
-      env.DB.prepare(`SELECT notice_id, kind, COUNT(*) AS n FROM reactions GROUP BY notice_id, kind`).all(),
-      voter ? env.DB.prepare(`SELECT notice_id, kind FROM reactions WHERE voter_id = ?`).bind(voter).all() : Promise.resolve({ results: [] }),
-      getRev(env),
-      env.DB.prepare(`SELECT id, day, course, start_time, end_time, room, faculty FROM class_routine ORDER BY day ASC, start_time ASC, id ASC`).all(),
+    const hash = await hashPassword(password, row ? row.pass_salt : "00".repeat(16)); // same work whether or not the account exists
+    if (!row || !safeEqual(hash, row.pass_hash)) { await delay(500); return json({ error: "Incorrect ID, room code or password." }, 401); }
+    if (row.status !== "approved") return json({ error: "Your request is still waiting for your CR's approval.", pending: true }, 403);
+    const token = await makeSession(env, row);
+    return json({ ok: true }, 200, { "Set-Cookie": sessionCookie(token, SESSION_SECONDS) });
+  }
+
+  if (path === "/api/logout" && method === "POST") return json({ ok: true }, 200, { "Set-Cookie": sessionCookie("", 0) });
+  if (path === "/api/push/key" && method === "GET") return json({ key: await getSecret(env, "VAPID_PUBLIC_KEY") });
+
+  if (path === "/api/rev" && method === "GET") {
+    const s = await readSession(request, env);
+    return json({ rev: s ? await getRev(env, s.rid) : 0 });
+  }
+
+  // ---------- Needs a logged-in, approved account ----------
+  const me = await currentUser(request, env);
+
+  if (path === "/api/bootstrap" && method === "GET") {
+    if (!me) return json({ me: null });
+    const rid = me.room_id, uid = me.id, isCr = me.role === "cr";
+    ctx.waitUntil(env.DB.prepare(`UPDATE users SET last_seen = datetime('now') WHERE id = ? AND (last_seen IS NULL OR last_seen < datetime('now', '-10 minutes'))`).bind(uid).run());
+    const [notices, settings, countdowns, polls, pollCounts, myVotes, reactCounts, myReacts, rev, routine, pending] = await Promise.all([
+      env.DB.prepare(`SELECT id, title, category, body, relevant_date, pinned, created_at FROM m_notices WHERE room_id = ? ORDER BY pinned DESC, created_at DESC, id DESC`).bind(rid).all(),
+      env.DB.prepare(`SELECT ct_datetime, syllabus_title, syllabus_text FROM m_settings WHERE room_id = ?`).bind(rid).first(),
+      env.DB.prepare(`SELECT id, title, target, note FROM m_countdowns WHERE room_id = ? ORDER BY target ASC, id ASC`).bind(rid).all(),
+      env.DB.prepare(`SELECT id, question, options, created_at FROM m_polls WHERE room_id = ? ORDER BY id DESC LIMIT 20`).bind(rid).all(),
+      env.DB.prepare(`SELECT v.poll_id, v.option_idx, COUNT(*) AS n FROM m_votes v JOIN m_polls p ON p.id = v.poll_id WHERE p.room_id = ? GROUP BY v.poll_id, v.option_idx`).bind(rid).all(),
+      env.DB.prepare(`SELECT poll_id, option_idx FROM m_votes WHERE user_id = ?`).bind(uid).all(),
+      env.DB.prepare(`SELECT r.notice_id, r.kind, COUNT(*) AS n FROM m_reacts r JOIN m_notices n ON n.id = r.notice_id WHERE n.room_id = ? GROUP BY r.notice_id, r.kind`).bind(rid).all(),
+      env.DB.prepare(`SELECT notice_id, kind FROM m_reacts WHERE user_id = ?`).bind(uid).all(),
+      getRev(env, rid),
+      env.DB.prepare(`SELECT id, day, course, start_time, end_time, room, faculty FROM m_routine WHERE room_id = ? ORDER BY day ASC, start_time ASC, id ASC`).bind(rid).all(),
+      isCr ? env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE room_id = ? AND role = 'student' AND status = 'pending'`).bind(rid).first() : Promise.resolve(null),
     ]);
-
-    const rc = {};
-    (reactCounts.results || []).forEach((r) => { (rc[r.notice_id] = rc[r.notice_id] || {})[r.kind] = r.n; });
-    const myR = {};
-    (myReacts.results || []).forEach((r) => { myR[r.notice_id] = r.kind; });
-    const pc = {};
-    (pollCounts.results || []).forEach((r) => { pc[r.poll_id + ":" + r.option_idx] = r.n; });
-    const myV = {};
-    (myVotes.results || []).forEach((r) => { myV[r.poll_id] = r.option_idx; });
-
+    const rc = {}; (reactCounts.results || []).forEach((r) => { (rc[r.notice_id] = rc[r.notice_id] || {})[r.kind] = r.n; });
+    const myR = {}; (myReacts.results || []).forEach((r) => { myR[r.notice_id] = r.kind; });
+    const pc = {}; (pollCounts.results || []).forEach((r) => { pc[r.poll_id + ":" + r.option_idx] = r.n; });
+    const myV = {}; (myVotes.results || []).forEach((r) => { myV[r.poll_id] = r.option_idx; });
     return json({
+      me: meOut(me),
+      isAdmin: isCr,
+      pending: pending?.n ?? 0,
       notices: (notices.results || []).map((n) => ({ ...n, reactions: rc[n.id] || {}, mine: myR[n.id] || null })),
       settings: settings || {},
       countdowns: countdowns.results || [],
       polls: (polls.results || []).map((p) => {
-        let options = [];
-        try { options = JSON.parse(p.options); } catch {}
+        let options = []; try { options = JSON.parse(p.options); } catch {}
         const counts = options.map((_, i) => pc[p.id + ":" + i] || 0);
         return { id: p.id, question: p.question, options, counts, total: counts.reduce((a, b) => a + b, 0), mine: myV[p.id] ?? null, created_at: p.created_at };
       }),
-      isAdmin: await isAdmin(request, env),
       routine: routine.results || [],
       rev,
     });
   }
 
-  if (path === "/api/push/key" && method === "GET") {
-    return json({ key: await getSecret(env, "VAPID_PUBLIC_KEY") });
-  }
+  if (!me) return json({ error: "Please log in first." }, 401);
+  const rid = me.room_id, uid = me.id;
 
   if (path === "/api/push/subscribe" && method === "POST") {
     const sub = await readBody(request);
-    const endpoint = String(sub?.endpoint ?? "");
-    const p256dh = String(sub?.keys?.p256dh ?? "");
-    const auth = String(sub?.keys?.auth ?? "");
-    if (!endpoint.startsWith("https://") || endpoint.length > 1000 || !p256dh || !auth) {
-      return json({ error: "Invalid subscription." }, 400);
-    }
-    await env.DB.prepare(
-      `INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh, auth) VALUES (?, ?, ?)`
-    ).bind(endpoint, p256dh, auth).run();
+    const endpoint = String(sub?.endpoint ?? ""), p256dh = String(sub?.keys?.p256dh ?? ""), auth = String(sub?.keys?.auth ?? "");
+    if (!endpoint.startsWith("https://") || endpoint.length > 1000 || !p256dh || !auth) return json({ error: "Invalid subscription." }, 400);
+    await env.DB.prepare(`INSERT OR REPLACE INTO m_push (endpoint, room_id, user_id, p256dh, auth) VALUES (?, ?, ?, ?, ?)`).bind(endpoint, rid, uid, p256dh, auth).run();
     return json({ ok: true });
   }
-
   if (path === "/api/push/unsubscribe" && method === "POST") {
     const { endpoint } = await readBody(request);
-    if (typeof endpoint === "string" && endpoint) {
-      await env.DB.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`).bind(endpoint).run();
-    }
+    if (typeof endpoint === "string" && endpoint) await env.DB.prepare(`DELETE FROM m_push WHERE endpoint = ? AND user_id = ?`).bind(endpoint, uid).run();
     return json({ ok: true });
   }
 
-  // Reactions (love / saint smile / upside-down saint smile): one per device per notice
   const reactMatch = path.match(/^\/api\/notices\/(\d+)\/react$/);
   if (reactMatch && method === "POST") {
-    if (!voter) return json({ error: "Device id missing. Please reload the app." }, 400);
     const id = Number(reactMatch[1]);
     const { kind } = await readBody(request);
     if (kind !== null && !REACTION_KINDS.includes(kind)) return json({ error: "Invalid reaction." }, 400);
-    if (!(await env.DB.prepare(`SELECT id FROM notices WHERE id = ?`).bind(id).first())) return json({ error: "Notice not found." }, 404);
-    if (kind === null) await env.DB.prepare(`DELETE FROM reactions WHERE notice_id = ? AND voter_id = ?`).bind(id, voter).run();
-    else await env.DB.prepare(`INSERT OR REPLACE INTO reactions (notice_id, voter_id, kind) VALUES (?, ?, ?)`).bind(id, voter, kind).run();
-    await bumpRev(env);
+    if (!(await env.DB.prepare(`SELECT id FROM m_notices WHERE id = ? AND room_id = ?`).bind(id, rid).first())) return json({ error: "Notice not found." }, 404);
+    if (kind === null) await env.DB.prepare(`DELETE FROM m_reacts WHERE notice_id = ? AND user_id = ?`).bind(id, uid).run();
+    else await env.DB.prepare(`INSERT OR REPLACE INTO m_reacts (notice_id, user_id, kind) VALUES (?, ?, ?)`).bind(id, uid, kind).run();
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
-  // Poll voting: one choice per device, tap the same option again to take the vote back
   const voteMatch = path.match(/^\/api\/polls\/(\d+)\/vote$/);
   if (voteMatch && method === "POST") {
-    if (!voter) return json({ error: "Device id missing. Please reload the app." }, 400);
-    const id = Number(voteMatch[1]);
-    const body = await readBody(request);
-    const poll = await env.DB.prepare(`SELECT options FROM polls WHERE id = ?`).bind(id).first();
+    const id = Number(voteMatch[1]), body = await readBody(request);
+    const poll = await env.DB.prepare(`SELECT options FROM m_polls WHERE id = ? AND room_id = ?`).bind(id, rid).first();
     if (!poll) return json({ error: "Poll not found." }, 404);
     if (body.option === null) {
-      await env.DB.prepare(`DELETE FROM poll_votes WHERE poll_id = ? AND voter_id = ?`).bind(id, voter).run();
+      await env.DB.prepare(`DELETE FROM m_votes WHERE poll_id = ? AND user_id = ?`).bind(id, uid).run();
     } else {
       const idx = Number(body.option);
-      let options = [];
-      try { options = JSON.parse(poll.options); } catch {}
+      let options = []; try { options = JSON.parse(poll.options); } catch {}
       if (!Number.isInteger(idx) || idx < 0 || idx >= options.length) return json({ error: "Invalid option." }, 400);
-      const name = String(body.name ?? "").trim().slice(0, 40);
-      await env.DB.prepare(`INSERT OR REPLACE INTO poll_votes (poll_id, voter_id, option_idx, voter_name) VALUES (?, ?, ?, ?)`).bind(id, voter, idx, name).run();
+      await env.DB.prepare(`INSERT OR REPLACE INTO m_votes (poll_id, user_id, option_idx) VALUES (?, ?, ?)`).bind(id, uid, idx).run();
     }
-    await bumpRev(env);
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
-  if (path === "/api/login" && method === "POST") {
-    const { password } = await readBody(request);
-    const a = await hmacHex("password-check", String(password ?? ""));
-    const b = await hmacHex("password-check", adminPassword);
-    if (!safeEqual(a, b)) {
-      await new Promise((r) => setTimeout(r, 500)); // slow down guessing
-      return json({ error: "Incorrect password." }, 401);
-    }
-    const token = await makeSessionToken(env);
-    return json({ ok: true }, 200, { "Set-Cookie": sessionCookie(token, SESSION_SECONDS) });
-  }
-
-  if (path === "/api/logout" && method === "POST") {
-    return json({ ok: true }, 200, { "Set-Cookie": sessionCookie("", 0) });
-  }
-
-  // ---------- Admin only ----------
+  // ---------- CR only ----------
   const noticeMatch = path.match(/^\/api\/notices\/(\d+)$/);
   const cdMatch = path.match(/^\/api\/countdowns\/(\d+)$/);
   const pollMatch = path.match(/^\/api\/polls\/(\d+)$/);
   const routineMatch = path.match(/^\/api\/routine\/([0-6])$/);
-  const isAdminRoute =
-    (path === "/api/notices" && method === "POST") ||
-    (noticeMatch && (method === "PUT" || method === "DELETE")) ||
-    (path === "/api/countdowns" && method === "POST") ||
-    (cdMatch && (method === "PUT" || method === "DELETE")) ||
-    (path === "/api/polls" && method === "POST") ||
-    (pollMatch && method === "DELETE") ||
-    (routineMatch && method === "PUT") ||
-    (path === "/api/stats" && method === "GET") ||
-    (path === "/api/settings" && method === "PUT");
+  const memberMatch = path.match(/^\/api\/members\/(\d+)\/(approve|reject|remove|password)$/);
+  const isCrRoute =
+    (path === "/api/notices" && method === "POST") || (noticeMatch && (method === "PUT" || method === "DELETE")) ||
+    (path === "/api/countdowns" && method === "POST") || (cdMatch && (method === "PUT" || method === "DELETE")) ||
+    (path === "/api/polls" && method === "POST") || (pollMatch && method === "DELETE") ||
+    (routineMatch && method === "PUT") || (path === "/api/settings" && method === "PUT") ||
+    (path === "/api/stats" && method === "GET") || (path === "/api/members" && method === "GET") || (memberMatch && method === "POST");
+  if (!isCrRoute) return json({ error: "Not found." }, 404);
+  if (me.role !== "cr") return json({ error: "Only the CR can do this." }, 403);
 
-  if (!isAdminRoute) return json({ error: "Not found." }, 404);
-  if (!(await isAdmin(request, env))) return json({ error: "Please log in as CR first." }, 401);
-
-  // How many devices have used the app (replaces the old test-notification button)
-  if (path === "/api/stats" && method === "GET") {
-    const one = async (sql) => (await env.DB.prepare(sql).first())?.n ?? 0;
+  if (path === "/api/stats") {
+    const one = async (sql, ...args) => (await env.DB.prepare(sql).bind(...args).first())?.n ?? 0;
     return json({
-      devices: await one(`SELECT COUNT(*) AS n FROM devices`),
-      active24h: await one(`SELECT COUNT(*) AS n FROM devices WHERE last_seen >= datetime('now', '-1 day')`),
-      active7d: await one(`SELECT COUNT(*) AS n FROM devices WHERE last_seen >= datetime('now', '-7 days')`),
-      alertsOn: await one(`SELECT COUNT(*) AS n FROM push_subscriptions`),
+      devices: await one(`SELECT COUNT(*) AS n FROM users WHERE room_id = ? AND role = 'student' AND status = 'approved'`, rid),
+      active24h: await one(`SELECT COUNT(*) AS n FROM users WHERE room_id = ? AND last_seen >= datetime('now', '-1 day')`, rid),
+      active7d: await one(`SELECT COUNT(*) AS n FROM users WHERE room_id = ? AND last_seen >= datetime('now', '-7 days')`, rid),
+      alertsOn: await one(`SELECT COUNT(*) AS n FROM m_push WHERE room_id = ?`, rid),
     });
+  }
+
+  if (path === "/api/members") {
+    const { results } = await env.DB.prepare(`SELECT id, username, name, status, created_at, last_seen FROM users WHERE room_id = ? AND role = 'student' ORDER BY status DESC, created_at DESC`).bind(rid).all();
+    return json({ roomCode: me.room_code, pending: (results || []).filter((u) => u.status === "pending"), approved: (results || []).filter((u) => u.status === "approved") });
+  }
+
+  if (memberMatch) {
+    const id = Number(memberMatch[1]), action = memberMatch[2];
+    const target = await env.DB.prepare(`SELECT id, status FROM users WHERE id = ? AND room_id = ? AND role = 'student'`).bind(id, rid).first();
+    if (!target) return json({ error: "Student not found." }, 404);
+    if (action === "approve") {
+      await env.DB.prepare(`UPDATE users SET status = 'approved' WHERE id = ?`).bind(id).run();
+    } else if (action === "password") {
+      const password = String((await readBody(request)).password ?? "");
+      if (password.length < 6 || password.length > 100) return json({ error: "Password must be at least 6 characters." }, 400);
+      const salt = randomHex(16);
+      await env.DB.prepare(`UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?`).bind(salt, await hashPassword(password, salt), id).run();
+    } else { // reject / remove
+      await env.DB.batch([
+        env.DB.prepare(`DELETE FROM users WHERE id = ?`).bind(id),
+        env.DB.prepare(`DELETE FROM m_votes WHERE user_id = ?`).bind(id),
+        env.DB.prepare(`DELETE FROM m_reacts WHERE user_id = ?`).bind(id),
+        env.DB.prepare(`DELETE FROM m_push WHERE user_id = ?`).bind(id),
+      ]);
+    }
+    await bumpRev(env, rid);
+    return json({ ok: true });
   }
 
   if (path === "/api/notices" && method === "POST") {
     const { error, value } = validateNotice(await readBody(request));
     if (error) return json({ error }, 400);
-    const result = await env.DB.prepare(
-      `INSERT INTO notices (title, category, body, relevant_date, pinned) VALUES (?, ?, ?, ?, ?)`
-    )
-      .bind(value.title, value.category, value.body, value.relevant_date, value.pinned)
-      .run();
-    await bumpRev(env);
-    ctx.waitUntil(
-      sendPushToAll(env, { title: "My CR · " + value.category, body: value.title, url: "/#notice-" + result.meta?.last_row_id })
-    );
+    const result = await env.DB.prepare(`INSERT INTO m_notices (room_id, title, category, body, relevant_date, pinned) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(rid, value.title, value.category, value.body, value.relevant_date, value.pinned).run();
+    await bumpRev(env, rid);
+    ctx.waitUntil(sendPushToRoom(env, rid, { title: (me.room_name || "Class") + " · " + value.category, body: value.title, url: "/#notice-" + result.meta?.last_row_id }));
     return json({ ok: true, id: result.meta?.last_row_id }, 201);
   }
-
   if (noticeMatch && method === "PUT") {
-    const id = Number(noticeMatch[1]);
     const { error, value } = validateNotice(await readBody(request));
     if (error) return json({ error }, 400);
-    const result = await env.DB.prepare(
-      `UPDATE notices
-       SET title = ?, category = ?, body = ?, relevant_date = ?, pinned = ?, updated_at = datetime('now')
-       WHERE id = ?`
-    )
-      .bind(value.title, value.category, value.body, value.relevant_date, value.pinned, id)
-      .run();
+    const result = await env.DB.prepare(`UPDATE m_notices SET title = ?, category = ?, body = ?, relevant_date = ?, pinned = ?, updated_at = datetime('now') WHERE id = ? AND room_id = ?`)
+      .bind(value.title, value.category, value.body, value.relevant_date, value.pinned, Number(noticeMatch[1]), rid).run();
     if (!result.meta?.changes) return json({ error: "Notice not found." }, 404);
-    await bumpRev(env);
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
-
   if (noticeMatch && method === "DELETE") {
     const id = Number(noticeMatch[1]);
-    const result = await env.DB.prepare(`DELETE FROM notices WHERE id = ?`).bind(id).run();
+    const result = await env.DB.prepare(`DELETE FROM m_notices WHERE id = ? AND room_id = ?`).bind(id, rid).run();
     if (!result.meta?.changes) return json({ error: "Notice not found." }, 404);
-    await env.DB.prepare(`DELETE FROM reactions WHERE notice_id = ?`).bind(id).run();
-    await bumpRev(env);
+    await env.DB.prepare(`DELETE FROM m_reacts WHERE notice_id = ?`).bind(id).run();
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
   if (path === "/api/countdowns" && method === "POST") {
     const { error, value } = validateCountdown(await readBody(request));
     if (error) return json({ error }, 400);
-    const result = await env.DB.prepare(`INSERT INTO countdowns (title, target, note) VALUES (?, ?, ?)`).bind(value.title, value.target, value.note).run();
-    await bumpRev(env);
+    const result = await env.DB.prepare(`INSERT INTO m_countdowns (room_id, title, target, note) VALUES (?, ?, ?, ?)`).bind(rid, value.title, value.target, value.note).run();
+    await bumpRev(env, rid);
     return json({ ok: true, id: result.meta?.last_row_id }, 201);
   }
-
   if (cdMatch && method === "PUT") {
     const { error, value } = validateCountdown(await readBody(request));
     if (error) return json({ error }, 400);
-    const result = await env.DB.prepare(`UPDATE countdowns SET title = ?, target = ?, note = ? WHERE id = ?`).bind(value.title, value.target, value.note, Number(cdMatch[1])).run();
+    const result = await env.DB.prepare(`UPDATE m_countdowns SET title = ?, target = ?, note = ? WHERE id = ? AND room_id = ?`).bind(value.title, value.target, value.note, Number(cdMatch[1]), rid).run();
     if (!result.meta?.changes) return json({ error: "Countdown not found." }, 404);
-    await bumpRev(env);
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
-
   if (cdMatch && method === "DELETE") {
-    const result = await env.DB.prepare(`DELETE FROM countdowns WHERE id = ?`).bind(Number(cdMatch[1])).run();
+    const result = await env.DB.prepare(`DELETE FROM m_countdowns WHERE id = ? AND room_id = ?`).bind(Number(cdMatch[1]), rid).run();
     if (!result.meta?.changes) return json({ error: "Countdown not found." }, 404);
-    await bumpRev(env);
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
   if (path === "/api/polls" && method === "POST") {
     const { error, value } = validatePoll(await readBody(request));
     if (error) return json({ error }, 400);
-    const result = await env.DB.prepare(`INSERT INTO polls (question, options) VALUES (?, ?)`).bind(value.question, JSON.stringify(value.options)).run();
-    await bumpRev(env);
-    ctx.waitUntil(sendPushToAll(env, { title: "My CR · Poll", body: value.question, url: "/#home" }));
+    const result = await env.DB.prepare(`INSERT INTO m_polls (room_id, question, options) VALUES (?, ?, ?)`).bind(rid, value.question, JSON.stringify(value.options)).run();
+    await bumpRev(env, rid);
+    ctx.waitUntil(sendPushToRoom(env, rid, { title: (me.room_name || "Class") + " · Poll", body: value.question, url: "/#home" }));
     return json({ ok: true, id: result.meta?.last_row_id }, 201);
   }
-
   if (pollMatch && method === "DELETE") {
     const id = Number(pollMatch[1]);
-    const result = await env.DB.prepare(`DELETE FROM polls WHERE id = ?`).bind(id).run();
+    const result = await env.DB.prepare(`DELETE FROM m_polls WHERE id = ? AND room_id = ?`).bind(id, rid).run();
     if (!result.meta?.changes) return json({ error: "Poll not found." }, 404);
-    await env.DB.prepare(`DELETE FROM poll_votes WHERE poll_id = ?`).bind(id).run();
-    await bumpRev(env);
+    await env.DB.prepare(`DELETE FROM m_votes WHERE poll_id = ?`).bind(id).run();
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
-  // Class routine: the CR saves one whole day at a time (course, time, room, faculty)
   if (routineMatch && method === "PUT") {
     const day = Number(routineMatch[1]);
     const body = await readBody(request);
@@ -497,10 +525,10 @@ async function handleApi(request, env, url, ctx) {
       rows.push({ course, start, end, room, faculty });
     }
     await env.DB.batch([
-      env.DB.prepare(`DELETE FROM class_routine WHERE day = ?`).bind(day),
-      ...rows.map((r) => env.DB.prepare(`INSERT INTO class_routine (day, course, start_time, end_time, room, faculty) VALUES (?, ?, ?, ?, ?, ?)`).bind(day, r.course, r.start, r.end, r.room, r.faculty)),
+      env.DB.prepare(`DELETE FROM m_routine WHERE room_id = ? AND day = ?`).bind(rid, day),
+      ...rows.map((r) => env.DB.prepare(`INSERT INTO m_routine (room_id, day, course, start_time, end_time, room, faculty) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(rid, day, r.course, r.start, r.end, r.room, r.faculty)),
     ]);
-    await bumpRev(env);
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
@@ -508,22 +536,14 @@ async function handleApi(request, env, url, ctx) {
     const body = await readBody(request);
     const ct = parseCtDatetime(body.ct_datetime);
     if (ct.error) return json({ error: ct.error }, 400);
-    const title = String(body.syllabus_title ?? "").trim();
-    const text = String(body.syllabus_text ?? "").trim();
+    const title = String(body.syllabus_title ?? "").trim(), text = String(body.syllabus_text ?? "").trim();
     if (title.length > 140) return json({ error: "Syllabus heading is too long (max 140)." }, 400);
     if (text.length > 8000) return json({ error: "Syllabus details are too long (max 8000)." }, 400);
     await env.DB.prepare(
-      `INSERT INTO settings (id, ct_datetime, syllabus_title, syllabus_text, updated_at)
-       VALUES (1, ?, ?, ?, datetime('now'))
-       ON CONFLICT(id) DO UPDATE SET
-         ct_datetime = excluded.ct_datetime,
-         syllabus_title = excluded.syllabus_title,
-         syllabus_text = excluded.syllabus_text,
-         updated_at = datetime('now')`
-    )
-      .bind(ct.value, title, text)
-      .run();
-    await bumpRev(env);
+      `INSERT INTO m_settings (room_id, ct_datetime, syllabus_title, syllabus_text, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(room_id) DO UPDATE SET ct_datetime = excluded.ct_datetime, syllabus_title = excluded.syllabus_title, syllabus_text = excluded.syllabus_text, updated_at = datetime('now')`
+    ).bind(rid, ct.value, title, text).run();
+    await bumpRev(env, rid);
     return json({ ok: true });
   }
 
