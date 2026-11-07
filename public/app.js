@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-let appState = { notices: [], settings: {}, countdowns: [], polls: [], routine: [], isAdmin: false, filter: "all", editingId: null };
+let appState = { notices: [], settings: {}, countdowns: [], polls: [], routine: [], me: null, pending: 0, isAdmin: false, filter: "all", editingId: null };
 let toastTimer;
 const safeText = (value) => String(value ?? "");
 function showToast(message) { const toast = $("#toast"); toast.textContent = message; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("show"), 2800); }
@@ -256,13 +256,6 @@ function renderAdminNotices() {
     row.append(ic, info, actions); list.append(row);
   }
 }
-function voterId() {
-  try {
-    let v = localStorage.getItem("bupVoter");
-    if (!v || !/^[A-Za-z0-9_-]{8,64}$/.test(v)) { v = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 12); localStorage.setItem("bupVoter", v); }
-    return v;
-  } catch { return ""; }
-}
 async function api(path, options = {}) {
   let response;
   try {
@@ -271,7 +264,6 @@ async function api(path, options = {}) {
       ...options,
       headers: {
         ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...(voterId() ? { "X-Voter": voterId() } : {}),
         ...(options.headers || {})
       }
     });
@@ -282,7 +274,7 @@ async function api(path, options = {}) {
   let data = {};
   try { data = await response.json(); } catch {}
   if (!response.ok) {
-    if (response.status === 401) appState.isAdmin = false;
+    if (response.status === 401 && !/^\/api\/(login|signup)/.test(path)) { appState.me = null; appState.isAdmin = false; dataSig = ""; showAuth(); }
     throw new Error(data.error || `Request failed (${response.status})`);
   }
   return data;
@@ -294,15 +286,17 @@ async function loadStats() {
 async function loadData(silent = false) {
   try {
     const data = await api("/api/bootstrap");
+    if (!data.me) { appState.me = null; appState.isAdmin = false; dataSig = ""; showAuth(); return; }
+    hideAuth();
     lastRev = data.rev ?? lastRev;
-    const sig = JSON.stringify([data.notices, data.settings, data.countdowns, data.polls, data.routine, data.isAdmin]);
+    const sig = JSON.stringify([data.me, data.pending, data.notices, data.settings, data.countdowns, data.polls, data.routine, data.isAdmin]);
     if (sig === dataSig) return;
     dataSig = sig;
     appState.notices = data.notices || []; appState.settings = data.settings || {}; appState.countdowns = data.countdowns || []; appState.polls = data.polls || []; appState.routine = data.routine || [];
-    appState.isAdmin = Boolean(data.isAdmin);
+    appState.me = data.me; appState.pending = data.pending || 0; appState.isAdmin = Boolean(data.isAdmin);
     renderCountdown(); renderPolls(); renderNotices(); consumePending(); pendingNotice = null; renderInfoPanels(); updateProfile(); updateNotifs();
     if (appState.isAdmin) {
-      renderAdminNotices(); fillCtForm(); loadStats();
+      renderAdminNotices(); fillCtForm(); loadStats(); loadMembers();
       // only refill the forms when the CR's own data changed, so students' votes/reactions never wipe what the CR is typing
       const as = JSON.stringify([data.settings, data.countdowns, data.routine, (data.polls || []).map(p => [p.id, p.question]), data.notices.map(n => [n.id, n.title, n.pinned])]);
       if (as !== adminSig) { adminSig = as; fillStoreForms(); fillClsForm(); }
@@ -317,11 +311,11 @@ async function loadData(silent = false) {
 }
 // Auto refresh: phones check a tiny change counter every few seconds and reload data by themselves when anything changes.
 async function checkRev() {
-  if (document.hidden) return;
+  if (document.hidden || !appState.me) return;
   try { const { rev } = await api("/api/rev"); if (lastRev === null) lastRev = rev; else if (rev !== lastRev) await loadData(true); } catch {}
 }
 setInterval(checkRev, 5000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) loadData(true); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && appState.me) loadData(true); });
 const toLocalInput = (iso) => {
   const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d).replace(" ", "T");
@@ -376,20 +370,13 @@ async function deleteNotice(id) {
   try { await api(`/api/notices/${id}`, { method: "DELETE" }); showToast("Notice deleted."); await loadData(); }
   catch (error) { showToast(error.message); }
 }
-function showAdmin() { $("#loginModal").classList.add("hidden"); showModal("adminModal"); renderAdminNotices(); fillCtForm(); fillStoreForms(); fillClsForm(); loadStats(); }
-$("#adminOpen").addEventListener("click", () => appState.isAdmin ? showAdmin() : showModal("loginModal"));
+function showAdmin() { showModal("adminModal"); renderAdminNotices(); fillCtForm(); fillStoreForms(); fillClsForm(); loadStats(); }
+$("#adminOpen").addEventListener("click", () => { if (appState.isAdmin) showAdmin(); });
 $$("[data-close]").forEach(el => el.addEventListener("click", () => closeModal(el.dataset.close)));
 $$(".filter").forEach(btn => btn.addEventListener("click", () => { $$(".filter").forEach(b => b.classList.remove("active")); btn.classList.add("active"); appState.filter = btn.dataset.filter; renderNotices(); }));
 $("#refreshBtn").addEventListener("click", async () => { await loadData(); showToast("Updates refreshed."); });
-$("#loginForm").addEventListener("submit", async event => {
-  event.preventDefault(); $("#loginError").textContent = "";
-  try { await api("/api/login", { method: "POST", body: JSON.stringify({ password: $("#adminPassword").value }) }); $("#adminPassword").value = ""; appState.isAdmin = true; await loadData(); showAdmin(); showToast("Logged in successfully."); }
-  catch (error) { $("#loginError").textContent = error.message; }
-});
-$("#logoutBtn").addEventListener("click", async () => {
-  try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch {}
-  appState.isAdmin = false; closeModal("adminModal"); resetNoticeForm(); showToast("Logged out."); await loadData();
-});
+$("#logoutBtn").addEventListener("click", () => doLogout());
+$("#logoutProfile").addEventListener("click", () => doLogout());
 $$(".admin-tab[data-tab]").forEach(btn => btn.addEventListener("click", () => {
   $$(".admin-tab[data-tab]").forEach(b => b.classList.toggle("active", b === btn));
   $$(".admin-pane").forEach(p => p.classList.toggle("hidden", p.id !== btn.dataset.tab));
@@ -713,6 +700,80 @@ $("#clsForm").addEventListener("submit", async (e) => {
   finally { btn.disabled = false; }
 });
 
+/* ---------- Accounts: login, sign up, rooms, join requests ---------- */
+let authRole = "student", authMode = "login";
+const AUTH_FIELDS = {
+  "student:login": [["student_id", "Student ID / Roll", "text", "username"], ["room_code", "Room code", "text", "off"], ["password", "Password", "password", "current-password"]],
+  "student:signup": [["name", "Your name", "text", "name"], ["student_id", "Student ID / Roll", "text", "username"], ["room_code", "Room code (ask your CR)", "text", "off"], ["password", "Create a password (min 6 characters)", "password", "new-password"]],
+  "cr:login": [["username", "CR username", "text", "username"], ["password", "Password", "password", "current-password"]],
+  "cr:signup": [["username", "Choose a unique username", "text", "username"], ["room_code", "Create a room code (4-20 letters or numbers)", "text", "off"], ["room_name", "Class / room name (optional)", "text", "off"], ["password", "Create a password (min 6 characters)", "password", "new-password"]],
+};
+function showAuth() { const was = !$("#authScreen").classList.contains("hidden"); $("#authScreen").classList.remove("hidden"); document.body.classList.add("locked"); if (!was) renderAuth(); }
+function hideAuth() { $("#authScreen").classList.add("hidden"); document.body.classList.remove("locked"); }
+function renderAuth(keepMsg) {
+  $$("[data-auth-role]").forEach(b => b.classList.toggle("active", b.dataset.authRole === authRole));
+  $$("[data-auth-mode]").forEach(b => b.classList.toggle("active", b.dataset.authMode === authMode));
+  const box = $("#authFields"); box.innerHTML = "";
+  AUTH_FIELDS[`${authRole}:${authMode}`].forEach(([key, label, type, ac]) => {
+    const wrap = el("div", "auth-field"), lab = el("label", "", label), inp = el("input"); lab.htmlFor = inp.id = "auth_" + key;
+    inp.type = type; inp.autocomplete = ac; inp.required = key !== "room_name"; inp.maxLength = key === "password" ? 100 : 60; inp.setAttribute("autocapitalize", "off");
+    if (key === "room_code") { inp.style.textTransform = "uppercase"; try { if (authRole === "student" && authMode === "login") inp.value = localStorage.getItem("bupRoom") || ""; } catch {} }
+    wrap.append(lab, inp); box.append(wrap);
+  });
+  $("#authSubmit").textContent = authMode === "login" ? "Login" : authRole === "cr" ? "Create CR account" : "Send join request";
+  if (!keepMsg) setMsg($("#authMsg"), "", false);
+}
+$$("[data-auth-role]").forEach(b => b.addEventListener("click", () => { authRole = b.dataset.authRole; renderAuth(); }));
+$$("[data-auth-mode]").forEach(b => b.addEventListener("click", () => { authMode = b.dataset.authMode; renderAuth(); }));
+$("#authForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); const btn = $("#authSubmit"), msg = $("#authMsg"); btn.disabled = true; setMsg(msg, "", false);
+  const vals = {}; AUTH_FIELDS[`${authRole}:${authMode}`].forEach(([key]) => { vals[key] = $("#auth_" + key).value.trim(); });
+  if (vals.password !== undefined) vals.password = $("#auth_password").value;
+  try {
+    if (authMode === "login") await api("/api/login", { method: "POST", body: JSON.stringify({ role: authRole, ...vals }) });
+    else await api("/api/signup/" + authRole, { method: "POST", body: JSON.stringify(vals) });
+    if (authRole === "student" && authMode === "signup") {
+      try { localStorage.setItem("bupRoom", vals.room_code.toUpperCase()); } catch {}
+      authMode = "login"; renderAuth(true);
+      setMsg(msg, "Request sent! Your CR will review it. After approval, log in with your ID, room code and password.", false);
+    } else {
+      if (authRole === "student") { try { localStorage.setItem("bupRoom", vals.room_code.toUpperCase()); } catch {} }
+      await loadData(); afterLogin(); showToast(authRole === "cr" && authMode === "signup" ? "CR account created." : "Logged in successfully.");
+    }
+  } catch (error) { setMsg(msg, error.message, true); }
+  finally { btn.disabled = false; }
+});
+function afterLogin() { firstVisitPrompt(); refreshPushBtn(); }
+async function doLogout() {
+  try { if ("serviceWorker" in navigator && "PushManager" in window) { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) await api("/api/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint: sub.endpoint }) }); } } catch {}
+  try { await api("/api/logout", { method: "POST", body: JSON.stringify({}) }); } catch {}
+  appState.me = null; appState.isAdmin = false; appState.pending = 0; dataSig = ""; adminSig = ""; closeModal("adminModal"); resetNoticeForm(); authMode = "login"; showAuth();
+}
+
+/* CR: join requests and students */
+async function loadMembers() {
+  try { const d = await api("/api/members"); $("#roomCodeShow").textContent = d.roomCode; renderMembers(d); } catch {}
+}
+async function memAct(u, action, body) {
+  if ((action === "reject" || action === "remove") && !confirm(action === "reject" ? `Reject ${u.name}?` : `Remove ${u.name} from your room?`)) return;
+  try { await api(`/api/members/${u.id}/${action}`, { method: "POST", body: JSON.stringify(body || {}) }); showToast(action === "approve" ? "Student accepted." : action === "password" ? "Password changed." : "Done."); await loadData(true); await loadMembers(); }
+  catch (error) { showToast(error.message); }
+}
+function renderMembers(d) {
+  const pl = $("#memPending"), al = $("#memApproved"); pl.innerHTML = ""; al.innerHTML = "";
+  if (!d.pending.length) pl.append(el("div", "info-empty", "No pending requests."));
+  d.pending.forEach(u => pl.append(adminRow("i-user", u.name, `ID ${u.username}`, [
+    iconBtn("", "Accept", "i-check", () => memAct(u, "approve")), iconBtn("danger", "Reject", "i-x", () => memAct(u, "reject"))
+  ])));
+  if (!d.approved.length) al.append(el("div", "info-empty", "No students yet."));
+  d.approved.forEach(u => al.append(adminRow("i-user", u.name, `ID ${u.username}`, [
+    iconBtn("", "Change password", "i-edit", () => { const pw = prompt(`New password for ${u.name} (min 6 characters)`); if (pw) memAct(u, "password", { password: pw }); }),
+    iconBtn("danger", "Remove", "i-trash", () => memAct(u, "remove"))
+  ])));
+}
+$("#roomCodeCopy").addEventListener("click", () => copyText($("#roomCodeShow").textContent));
+$$(".admin-tab[data-tab]").forEach(btn => btn.addEventListener("click", () => { if (btn.dataset.tab === "memEditor") loadMembers(); }));
+
 /* ---------- Navigation, theme, profile, notifications ---------- */
 const VIEWS = ["home", "feed", "materials", "profile"];
 function showView(name, push = true) {
@@ -752,11 +813,13 @@ function setTheme(t) {
 }
 $("#themeToggle").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 $$("[data-theme-set]").forEach(b => b.addEventListener("click", () => setTheme(b.dataset.themeSet)));
-$("#userLogin").addEventListener("click", () => showToast("User login is coming soon."));
 function updateProfile() {
-  $("#adminOpen").textContent = appState.isAdmin ? "Open admin panel" : "Login as Admin";
-  $("#profileName").textContent = appState.isAdmin ? "Class representative" : "Guest";
-  $("#profileSub").textContent = appState.isAdmin ? "You can publish notices and update CT details." : "You are not signed in.";
+  const me = appState.me;
+  $("#adminOpen").classList.toggle("hidden", !appState.isAdmin);
+  $("#adminOpen").textContent = "Open CR panel" + (appState.isAdmin && appState.pending ? ` · ${appState.pending} new request${appState.pending === 1 ? "" : "s"}` : "");
+  $("#profileName").textContent = me ? (me.name || me.username) : "Guest";
+  $("#profileSub").textContent = !me ? "You are not signed in." : me.role === "cr" ? `Class representative · Room ${me.roomCode}` : `Student · ID ${me.username} · Room ${me.roomCode}`;
+  const badge = $("#memBadge"); if (badge) { badge.textContent = appState.pending; badge.classList.toggle("hidden", !(appState.isAdmin && appState.pending)); }
 }
 let notifItems = [], freshIds = new Set(), notifReady = false;
 const alerted = new Set();
@@ -866,13 +929,13 @@ async function firstVisitPrompt() {
   if (Notification.permission !== "default") return;
   setTimeout(() => showModal("pushModal"), 600);
 }
-setInterval(() => { if (!document.hidden) loadData(true); }, 60000);
+setInterval(() => { if (!document.hidden && appState.me) loadData(true); }, 60000);
 setTheme(document.documentElement.dataset.theme || "light");
 routeHash();
 
 buildChips();
 initCtSlider(); addPollOpt(); addPollOpt();
 setInterval(() => tickCountdown(), 1000);
-loadData(); firstVisitPrompt(); refreshPushBtn();
+loadData().then(() => { if (appState.me) afterLogin(); });
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", (e) => { if (!e.data) return; if (e.data.type === "refresh") loadData(true); if (e.data.type === "open" && e.data.hash) location.hash = e.data.hash; });
