@@ -1,4 +1,4 @@
-const CACHE = "bup-ice-v8";
+const CACHE = "bup-ice-v9";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/countdown-bg.jpg", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/logo-white.png"];
 
 self.addEventListener("install", (event) => {
@@ -18,17 +18,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
 
-  // Only the public bootstrap data is kept as an offline fallback. All other API calls (login, publish, edit, delete) always go to the network.
-  if (url.pathname.startsWith("/api/")) {
-    if (url.pathname !== "/api/bootstrap") return;
-    event.respondWith(
-      fetch(req).then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
-        return res;
-      }).catch(() => caches.match(req))
-    );
-    return;
-  }
+  // Account data is never cached: every API call goes to the network.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Pages and files: try the network first so new deploys show up, fall back to the cache when offline.
   event.respondWith(
